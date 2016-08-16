@@ -121,7 +121,7 @@
     (when (elk--atom-letter-p (car this-char))
       (let ((start-pos (cdr this-char))
             (current-char (elk--use-stream stream nil)))
-        (while (elk--atom-letter-p (car (elk--use-stream stream 'peek)))
+        (while (elk--atom-letter-p (car (elk--use-stream stream 'current)))
           (setf current-char (elk--use-stream stream nil)))
         (elk--create-token 'atom (list) start-pos (cdr current-char))))))
 
@@ -163,7 +163,8 @@
             (next-char (elk--use-stream stream nil)))
         (when (elk--quote-p (car next-char))
           (setf next-char (elk--use-stream stream nil)))
-        (elk--create-token 'quote (elk--dispatch-stream-handlers stream) start-pos (cdr next-char))))))
+        (elk--create-token 'quote (list (elk--dispatch-stream-handlers stream))
+                           start-pos (cdr next-char))))))
 
 
 (defvar elk--stream-handlers
@@ -195,3 +196,23 @@
     (while (elk--stream-next-p stream)
       (push-end (elk--dispatch-stream-handlers stream) tokens))
     tokens))
+
+(defun elk--discard-filler (tokens)
+  "Disregard comments and whitespace with the tokens"
+  (let* ((filterer (lambda (token)
+                     (let ((type (plist-get token :type)))
+                       (pcase type
+                         ((or `whitespace `comment) nil)
+                         (_ t)))))
+         (recurser (lambda (token)
+                     (let ((type (plist-get token :type)))
+                       (pcase type
+                         ((or `expression `quote)
+                          (let* ((sub-tokens (plist-get token :tokens))
+                                 (recursed-tokens (-map #'elk--discard-filler sub-tokens)))
+                            (plist-put(-copy token) :tokens recursed-tokens)))
+                         (_ token)))))
+         (pipeline (-compose
+                    (-partial #'-map recurser)
+                    (-partial #'-filter filterer))))
+    (funcall pipeline tokens)))
