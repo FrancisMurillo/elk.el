@@ -14,8 +14,8 @@
     (lambda (&optional command)
       (cond
        ((eq command 'peek) (if (< index text-length)
-                                (cons (substring-no-properties current-text index (1+ index)) index)
-                              'stop))
+                               (cons (substring-no-properties current-text index (1+ index)) index)
+                             'stop))
        ((eq command 'current) current-value)
        (t
         (setf current-value (if (< index text-length)
@@ -135,11 +135,9 @@
             (current-char (elk--use-stream stream nil)))
         (while (and (elk--stream-next-p stream)
                     (not (elk--text-quote-p (car (elk--use-stream stream 'current)))))
-          (when (elk--text-escape-p (car (elk--use-stream stream 'peek)))
-            (setf current-char (elk--use-stream stream nil))
+          (when (elk--text-escape-p (car (elk--use-stream stream 'current)))
             (setf current-char (elk--use-stream stream nil)))
-          (setf current-char (elk--use-stream stream nil))
-          )
+          (setf current-char (elk--use-stream stream nil)))
         (setf current-char (elk--use-stream stream nil))
         (elk--create-token 'text (list) start-pos (cdr current-char))))))
 
@@ -152,10 +150,10 @@
             (expression-tokens (list)))
         (while (and (elk--stream-next-p stream)
                     (not (elk--expression-close-p (car current-char))))
-          (push-end (elk--dispatch-stream-handlers stream) expression-tokens)
+          (push (elk--dispatch-stream-handlers stream) expression-tokens)
           (setf current-char (elk--use-stream stream 'current)))
         (setf current-char (elk--use-stream stream nil))
-        (elk--create-token 'expression expression-tokens start-pos (cdr current-char))))))
+        (elk--create-token 'expression (seq-reverse expression-tokens) start-pos (cdr current-char))))))
 
 (defun elk--consume-quote (stream)
   "Consume an atom name"
@@ -170,13 +168,13 @@
 
 
 (defvar elk--stream-handlers
-    (list
-     #'elk--consume-whitespace
-     #'elk--consume-comment
-     #'elk--consume-quote
-     #'elk--consume-atom
-     #'elk--consume-text
-     #'elk--consume-expression)
+  (list
+   #'elk--consume-whitespace
+   #'elk--consume-comment
+   #'elk--consume-quote
+   #'elk--consume-atom
+   #'elk--consume-text
+   #'elk--consume-expression)
   "Elisp parsing handlers")
 
 
@@ -193,20 +191,20 @@
 (defun elk--discard-filler (tokens)
   "Disregard comments and whitespace with the tokens"
   (let* ((filterer (lambda (token)
-                             (let ((type (plist-get token :type)))
-                               (pcase type
-                                 ((or `whitespace `comment) nil)
-                                 (_ t)))))
-                 (recurser (lambda (token)
-                             (let ((type (plist-get token :type)))
-                               (pcase type
-                                 ((or `expression `quote)
-                                  (let* ((sub-tokens (plist-get token :tokens)))
-                                    (plist-put (-copy token) :tokens (elk--discard-filler sub-tokens))))
-                                 (_ token)))))
-                 (pipeline (-compose
-                            (-partial #'-map recurser)
-                            (-partial #'-filter filterer))))
+                     (let ((type (plist-get token :type)))
+                       (pcase type
+                         ((or `whitespace `comment) nil)
+                         (_ t)))))
+         (recurser (lambda (token)
+                     (let ((type (plist-get token :type)))
+                       (pcase type
+                         ((or `expression `quote)
+                          (let* ((sub-tokens (plist-get token :tokens)))
+                            (plist-put (-copy token) :tokens (elk--discard-filler sub-tokens))))
+                         (_ token)))))
+         (pipeline (-compose
+                    (-partial #'-map recurser)
+                    (-partial #'-filter filterer))))
     (funcall pipeline tokens)))
 
 (defun elk--attach-source (text tokens)
@@ -274,14 +272,29 @@
             (-partial #'elk--select-type 'atom))
            tokens))
 
+(defun elk--default-atom-filter (atom)
+  "Filter an atom if it is not built-in or redundant"
+  (funcall (-andfn (-not
+                    (-compose
+                          #'special-form-p
+                          #'intern-soft))
+                   (-not (-compose
+                          #'subrp
+                          #'symbol-function
+                          #'intern-soft))
+                   )
+            atom))
+
+
 (defun elk--summarize-atoms (tokens)
   "Report what atoms are used more likely"
   (funcall (-compose
             (-partial #'-sort (-on #'> #'cdr))
             (-partial #'-map (lambda (repeating-tokens)
                                (cons (-first-item repeating-tokens)
-                                     (length repeating-tokens))))
+                                     (1- (length repeating-tokens)))))
             (-partial #'-group-by #'identity)
+            (-partial #'-filter #'elk--default-atom-filter)
             #'elk--extract-atoms)
            tokens))
 
@@ -292,9 +305,9 @@
                 (stream (elk--text-stream text)))
     (elk--use-stream stream nil)
     (while (elk--stream-next-p stream)
-      (push-end (elk--dispatch-stream-handlers stream) tokens))
-
+      (push (elk--dispatch-stream-handlers stream) tokens))
     (funcall (-compose
               (-partial #'elk--attach-source text)
-              #'elk--attach-level)
+              #'elk--attach-level
+              #'seq-reverse)
              tokens)))
