@@ -1,3 +1,5 @@
+;; -*- lexical-binding: t; -*-
+
 (require 'dash)
 (require 's)
 (require 'concurrent)
@@ -90,7 +92,7 @@
 
 (defun elk--atom-letter-p (letter)
   "Is letter an valid atom letter"
-  (s-matches-p "[A-z0-9-/:&<>=+,!%*?\\.|)(\\]" letter))
+  (s-matches-p "[A-z0-9-/:&<>=+,!%*?\\.|\\]" letter))
 
 
 (defun elk--consume-whitespace (stream)
@@ -99,7 +101,7 @@
     (when (elk--whitespace-p (car this-char))
       (let ((start-pos (cdr this-char))
             (current-char (elk--use-stream stream nil)))
-        (while (elk--whitespace-p (car (elk--use-stream stream 'peek)))
+        (while (elk--whitespace-p (car (elk--use-stream stream 'current)))
           (setf current-char (elk--use-stream stream nil)))
         (elk--create-token 'whitespace (list) start-pos (cdr current-char))))))
 
@@ -110,9 +112,9 @@
       (let ((start-pos (cdr this-char))
             (current-char (elk--use-stream stream nil)))
         (while (and (elk--stream-next-p stream)
-                    (not (elk--newline-p (car (elk--use-stream stream 'peek)))))
+                    (not (elk--newline-p (car (elk--use-stream stream 'current)))))
           (setf current-char (elk--use-stream stream nil)))
-        (setf current-char (elk--use-stream stream nil current-char))
+        (setf current-char (elk--use-stream stream nil))
         (elk--create-token 'comment (list) start-pos (cdr current-char))))))
 
 (defun elk--consume-atom (stream)
@@ -188,6 +190,102 @@
     value))
 
 
+(defun elk--discard-filler (tokens)
+  "Disregard comments and whitespace with the tokens"
+  (let* ((filterer (lambda (token)
+                             (let ((type (plist-get token :type)))
+                               (pcase type
+                                 ((or `whitespace `comment) nil)
+                                 (_ t)))))
+                 (recurser (lambda (token)
+                             (let ((type (plist-get token :type)))
+                               (pcase type
+                                 ((or `expression `quote)
+                                  (let* ((sub-tokens (plist-get token :tokens)))
+                                    (plist-put (-copy token) :tokens (elk--discard-filler sub-tokens))))
+                                 (_ token)))))
+                 (pipeline (-compose
+                            (-partial #'-map recurser)
+                            (-partial #'-filter filterer))))
+    (funcall pipeline tokens)))
+
+(defun elk--attach-source (text tokens)
+  "Label atoms based on their source text"
+  (lexical-let* ((source-text text)
+                 (recurser (lambda (token)
+                             (let ((type (plist-get token :type)))
+                               (pcase type
+                                 ((or `atom `text)
+                                  (let ((start-pos (plist-get token :start-pos))
+                                        (end-pos (plist-get token :end-pos)))
+                                    (plist-put(-copy token) :text
+                                              (substring-no-properties source-text
+                                                                       start-pos
+                                                                       end-pos))))
+                                 ((or `expression `quote)
+                                  (let* ((sub-tokens (plist-get token :tokens)))
+                                    (plist-put(-copy token) :tokens (elk--attach-source source-text sub-tokens))))
+                                 (_ token))))))
+    (-map recurser tokens)))
+
+(defun elk--leveler (level tokens)
+  "Recurser of elk--atach-level"
+  (-map (lambda (token)
+          (let ((type (plist-get token :type))
+                (leveled-token (plist-put (-copy token) :level level)))
+            (pcase type
+              ((or `expression `quote)
+               (let ((sub-tokens (plist-get leveled-token :tokens)))
+                 (plist-put (-copy leveled-token)
+                            :tokens (elk--leveler (1+ level) sub-tokens))))
+              (_ leveled-token))))
+        tokens))
+
+(defun elk--attach-level (tokens)
+  "Attach a level value for the"
+  (elk--leveler 0 tokens))
+
+(defun elk--flatten-tokens (tokens)
+  "Flatten nested tokens as one token list"
+  (funcall (-compose
+            (-partial #'apply #'append)
+            (-partial #'-map (lambda (token)
+                               (let ((type (plist-get token :type)))
+                                 (pcase type
+                                   ((or `expression `quote)
+                                    (let ((sub-tokens (plist-get token :tokens)))
+                                      (elk--flatten-tokens sub-tokens)))
+                                   (_ (list token)))))))
+           tokens))
+
+(defun elk--select-type (type tokens)
+  "Filter tokens by a specified type"
+  (funcall (-compose
+            (-partial #'-filter
+                      (lambda (token)
+                        (eq (plist-get token :type) type)))
+            #'elk--flatten-tokens)
+           tokens))
+
+(defun elk--extract-atoms (tokens)
+  "Get atoms in tokens"
+  (funcall (-compose
+            (-partial #'-map (-rpartial #'plist-get :text))
+            (-partial #'elk--select-type 'atom))
+           tokens))
+
+(defun elk--summarize-atoms (tokens)
+  "Report what atoms are used more likely"
+  (funcall (-compose
+            (-partial #'-sort (-on #'> #'cdr))
+            (-partial #'-map (lambda (repeating-tokens)
+                               (cons (-first-item repeating-tokens)
+                                     (length repeating-tokens))))
+            (-partial #'-group-by #'identity)
+            #'elk--extract-atoms)
+           tokens))
+
+
 (defun elk--tokenize (text)
   "Tokenize an elisp text"
   (lexical-let ((tokens (list))
@@ -195,24 +293,8 @@
     (elk--use-stream stream nil)
     (while (elk--stream-next-p stream)
       (push-end (elk--dispatch-stream-handlers stream) tokens))
-    tokens))
 
-(defun elk--discard-filler (tokens)
-  "Disregard comments and whitespace with the tokens"
-  (let* ((filterer (lambda (token)
-                     (let ((type (plist-get token :type)))
-                       (pcase type
-                         ((or `whitespace `comment) nil)
-                         (_ t)))))
-         (recurser (lambda (token)
-                     (let ((type (plist-get token :type)))
-                       (pcase type
-                         ((or `expression `quote)
-                          (let* ((sub-tokens (plist-get token :tokens))
-                                 (recursed-tokens (-map #'elk--discard-filler sub-tokens)))
-                            (plist-put(-copy token) :tokens recursed-tokens)))
-                         (_ token)))))
-         (pipeline (-compose
-                    (-partial #'-map recurser)
-                    (-partial #'-filter filterer))))
-    (funcall pipeline tokens)))
+    (funcall (-compose
+              (-partial #'elk--attach-source text)
+              #'elk--attach-level)
+             tokens)))
