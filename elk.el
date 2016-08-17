@@ -292,6 +292,23 @@
   "Attach an id for each token, useful when the tokens are flattned"
   (elk--marker 0 (elk--incremental-sequence 1) tokens))
 
+(defun elk--indexer (tokens)
+  "Recurser of elk--attach-expression-index"
+  (-map-indexed (lambda (index token)
+                  (let ((type (plist-get token :type))
+                        (indexed-token (plist-put (-copy token) :index index)))
+                    (pcase type
+                      ((or `expression `quote)
+                       (let ((sub-tokens (plist-get indexed-token :tokens)))
+                         (plist-put (-copy indexed-token)
+                                    :tokens (elk--indexer sub-tokens))))
+                      (_ indexed-token))))
+                tokens))
+
+(defun elk--attach-expression-index (tokens)
+  "Attach indices to expression to determine what position it is in"
+  (elk--indexer tokens))
+
 
 (defun elk--flatten-tokens (tokens)
   "Flatten nested tokens as one token list"
@@ -367,5 +384,8 @@
               (-partial #'elk--attach-source text)
               #'elk--attach-token-id
               #'elk--attach-level
+              #'elk--attach-expression-index
               #'seq-reverse)
              tokens)))
+
+(provide 'elk)
