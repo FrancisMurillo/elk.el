@@ -388,4 +388,21 @@
               #'seq-reverse)
              tokens)))
 
+
+(defun elk--nearest-top-expression-at-point ()
+  "Get token expression that is nearest to the highest point"
+  (interactive)
+  (let* ((source-text (buffer-substring-no-properties (point-min) (point-max)))
+         (tokens (elk--tokenize source-text))
+         (expression-token (-first (lambda (token)
+                                     (and (= (plist-get token :level) 0)
+                                          (eq (plist-get token :type) 'expression)
+                                          (<= (plist-get token :start-pos) (point))
+                                          (>= (plist-get token :end-pos) (point))))
+                                   tokens)))
+    (if expression-token
+        (goto-char (1+ (plist-get expression-token :start-pos)))
+      (message "No near top level expression at point"))))
+
+
 (provide 'elk)
