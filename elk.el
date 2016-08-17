@@ -25,6 +25,7 @@
                               'stop))
         current-value)))))
 
+
 (defun elk--test-stream (text)
   "For testing purposes"
   (let ((stream (elk--text-stream text)))
@@ -57,8 +58,9 @@
 
 (defun elk--whitespace-p (letter)
   "Is letter a whitespace"
-  (and (not (string-equal letter ""))
-       (string-equal (s-trim letter) "")))
+  (or (string-equal letter "")
+      (and (not (string-equal letter ""))
+           (string-equal (s-trim letter) ""))))
 
 (defun elk--comment-p (letter)
   "Is letter is comment"
@@ -82,6 +84,10 @@
   "Is letter a text escape"
   (string-equal letter "\\"))
 
+(defun elk--letter-escape-p (letter)
+  "Is letter a text escape"
+  (string-equal letter "?"))
+
 (defun elk--expression-start-p (letter)
   "Is letter an expression starter"
   (string-equal letter "("))
@@ -92,7 +98,7 @@
 
 (defun elk--atom-letter-p (letter)
   "Is letter an valid atom letter"
-  (s-matches-p "[A-z0-9-/:&<>=+,!%*?\\.|\\]" letter))
+  (s-matches-p "[A-z0-9-/:&<>=+,!%*\\.|\\@]" letter))
 
 
 (defun elk--consume-whitespace (stream)
@@ -120,12 +126,21 @@
 (defun elk--consume-atom (stream)
   "Consume an atom name"
   (let ((this-char (elk--use-stream stream 'current)))
-    (when (elk--atom-letter-p (car this-char))
+    (cond
+     ((elk--atom-letter-p (car this-char))
       (let ((start-pos (cdr this-char))
             (current-char (elk--use-stream stream nil)))
         (while (elk--atom-letter-p (car (elk--use-stream stream 'current)))
           (setf current-char (elk--use-stream stream nil)))
-        (elk--create-token 'atom (list) start-pos (cdr current-char))))))
+        (elk--create-token 'atom (list) start-pos (cdr current-char))))
+     ((elk--letter-escape-p (car this-char))
+      (let ((start-pos (cdr this-char))
+            (current-char (elk--use-stream stream nil)))
+        (when (elk--text-escape-p (car (elk--use-stream stream 'current)))
+          (setf current-char (elk--use-stream stream nil)))
+        (setf current-char (elk--use-stream stream nil))
+        (elk--create-token 'atom (list) start-pos (cdr current-char))))
+     (t nil))))
 
 (defun elk--consume-text (stream)
   "Consume a text declaration"
@@ -181,8 +196,10 @@
 (defun elk--dispatch-stream-handlers (stream)
   "Execute elisp parsing functions"
   (lexical-let ((value nil))
+    ;; (message "!: %s" (car (funcall stream 'current)))
     (mapc (lambda (handler)
             (unless value
+              ;; (message "*-> %s" (symbol-name handler))
               (setf value (funcall handler stream))))
           elk--stream-handlers)
     value))
@@ -215,8 +232,12 @@
                                (pcase type
                                  ((or `atom `text)
                                   (let ((start-pos (plist-get token :start-pos))
-                                        (end-pos (plist-get token :end-pos)))
-                                    (plist-put(-copy token) :text
+                                        (end-pos  (plist-get token :end-pos))
+                                        (new-token (-copy token)))
+                                    (when (= end-pos -1)
+                                      (setf end-pos (length source-text))
+                                      (plist-put new-token :end-pos end-pos))
+                                    (plist-put new-token :text
                                               (substring-no-properties source-text
                                                                        start-pos
                                                                        end-pos))))
@@ -227,7 +248,7 @@
     (-map recurser tokens)))
 
 (defun elk--leveler (level tokens)
-  "Recurser of elk--atach-level"
+  "Recurser of elk--attach-level"
   (-map (lambda (token)
           (let ((type (plist-get token :type))
                 (leveled-token (plist-put (-copy token) :level level)))
@@ -242,6 +263,35 @@
 (defun elk--attach-level (tokens)
   "Attach a level value for the"
   (elk--leveler 0 tokens))
+
+(defun elk--incremental-sequence (&optional start)
+  "An quick implementation of an increasing sequence"
+  (lexical-let ((seed (or start 0)))
+    (lambda ()
+      (prog1
+          seed
+        (setf seed (1+ seed))))))
+
+(defun elk--marker (parent-id generator tokens)
+  "Recurser of elk--attach-token-id"
+    (-map (lambda (token)
+          (let ((type (plist-get token :type))
+                (marked-token (plist-put (-copy token) :id (funcall generator))))
+            (setf marked-token (plist-put marked-token :parent-id parent-id))
+            (pcase type
+              ((or `expression `quote)
+               (let ((sub-tokens (plist-get marked-token :tokens)))
+                 (plist-put (-copy marked-token)
+                            :tokens (elk--marker
+                                     (plist-get marked-token :id)
+                                     generator sub-tokens))))
+              (_ marked-token))))
+        tokens))
+
+(defun elk--attach-token-id (tokens)
+  "Attach an id for each token, useful when the tokens are flattned"
+  (elk--marker 0 (elk--incremental-sequence 1) tokens))
+
 
 (defun elk--flatten-tokens (tokens)
   "Flatten nested tokens as one token list"
@@ -272,6 +322,13 @@
             (-partial #'elk--select-type 'atom))
            tokens))
 
+(defun elk--extract-text (tokens)
+  "Get text in tokens"
+  (funcall (-compose
+            (-partial #'-map (-rpartial #'plist-get :text))
+            (-partial #'elk--select-type 'text))
+           tokens))
+
 (defun elk--default-atom-filter (atom)
   "Filter an atom if it is not built-in or redundant"
   (funcall (-andfn (-not
@@ -281,8 +338,7 @@
                    (-not (-compose
                           #'subrp
                           #'symbol-function
-                          #'intern-soft))
-                   )
+                          #'intern-soft)))
             atom))
 
 
@@ -305,9 +361,11 @@
                 (stream (elk--text-stream text)))
     (elk--use-stream stream nil)
     (while (elk--stream-next-p stream)
+      ;; (message "?: %s" (car (funcall stream 'current)))
       (push (elk--dispatch-stream-handlers stream) tokens))
     (funcall (-compose
               (-partial #'elk--attach-source text)
+              #'elk--attach-token-id
               #'elk--attach-level
               #'seq-reverse)
              tokens)))
