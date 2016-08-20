@@ -2,7 +2,6 @@
 
 (require 'dash)
 (require 's)
-(require 'concurrent)
 
 
 (defun elk--text-stream (text)
@@ -98,7 +97,7 @@
 
 (defun elk--atom-letter-p (letter)
   "Is letter an valid atom letter"
-  (s-matches-p "[A-z0-9-/:&<>=+,!%*\\.|\\@]" letter))
+  (s-matches-p "[A-z0-9-/:&<>=+,!%*\\.|\\@?]" letter))
 
 
 (defun elk--consume-whitespace (stream)
@@ -127,18 +126,18 @@
   "Consume an atom name"
   (let ((this-char (elk--use-stream stream 'current)))
     (cond
-     ((elk--atom-letter-p (car this-char))
-      (let ((start-pos (cdr this-char))
-            (current-char (elk--use-stream stream nil)))
-        (while (elk--atom-letter-p (car (elk--use-stream stream 'current)))
-          (setf current-char (elk--use-stream stream nil)))
-        (elk--create-token 'atom (list) start-pos (cdr current-char))))
      ((elk--letter-escape-p (car this-char))
       (let ((start-pos (cdr this-char))
             (current-char (elk--use-stream stream nil)))
         (when (elk--text-escape-p (car (elk--use-stream stream 'current)))
           (setf current-char (elk--use-stream stream nil)))
         (setf current-char (elk--use-stream stream nil))
+        (elk--create-token 'atom (list) start-pos (cdr current-char))))
+     ((elk--atom-letter-p (car this-char))
+      (let ((start-pos (cdr this-char))
+            (current-char (elk--use-stream stream nil)))
+        (while (elk--atom-letter-p (car (elk--use-stream stream 'current)))
+          (setf current-char (elk--use-stream stream nil)))
         (elk--create-token 'atom (list) start-pos (cdr current-char))))
      (t nil))))
 
@@ -190,7 +189,7 @@
    #'elk--consume-atom
    #'elk--consume-text
    #'elk--consume-expression)
-  "Elisp parsing handlers")
+  "Elisp parsing handlers, order is important")
 
 
 (defun elk--dispatch-stream-handlers (stream)
@@ -387,6 +386,20 @@
               #'elk--attach-expression-index
               #'seq-reverse)
              tokens)))
+
+(defvar elk-current-tokens (list)
+  "Current tokens parsed")
+
+
+(defun elk-tokenize (&optional text)
+  "Tokenize the text and save in current tokens"
+  (interactive)
+  (let ((source-text (cond
+                      ((not (null text)) text)
+                      ((region-active-p) (buffer-substring-no-properties (region-beginning) (region-end)))
+                      (t  (buffer-substring-no-properties (point-min) (point-max))))))
+    (setq elk-current-tokens (elk--tokenize source-text))
+    elk-current-tokens))
 
 
 (defun elk--nearest-top-expression-at-point ()
