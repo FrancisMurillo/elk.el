@@ -24,6 +24,8 @@
 ;;; Code:
 
 (require 'f)
+(require 'cl)
+
 (require 'elk (f-expand "elk" (f-parent (f-parent (f-this-file)))))
 
 (provide 'test-helper)
