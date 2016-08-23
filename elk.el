@@ -88,6 +88,7 @@
             (cons "" -1))
       base-value)))
 
+
 (defun elk--stream-next-p (stream)
   "Check if a stream is stoppped"
   (not (eq (funcall stream 'peek) 'stop)))
