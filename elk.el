@@ -50,7 +50,7 @@
 (require 'dash)
 (require 's)
 
-
+;;* Stream
 (defun elk--text-stream (text)
   "Create a text stream used to tokenize lisp"
   (lexical-let ((current-text text)
@@ -94,6 +94,7 @@
   (not (eq (funcall stream 'peek) 'stop)))
 
 
+;;* Token
 (defun elk--create-token (type tokens start-pos end-pos)
   "Create a token with a specified token type, token value and start and end range"
   (list
@@ -103,6 +104,7 @@
    :end-pos end-pos))
 
 
+;;* Consumer
 (defun elk--whitespace-p (letter)
   "Is letter a whitespace"
   (or (string-equal letter "")

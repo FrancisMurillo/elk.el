@@ -81,6 +81,37 @@
     (should (null token))))
 
 
+;;* consume-comment
+(ert-deftest elk--consume-comment-test/base ()
+  (let* ((source-code "; Meow \n")
+         (source-stream (elk--started-stream source-code))
+         (token (elk--consume-comment source-stream)))
+    (should (eq 'comment
+                (plist-get token :type)))
+    (should (null (plist-get token :tokens)))
+    (should (= 0
+               (plist-get token :start-pos)))
+    (should (= -1
+               (plist-get token :end-pos)))))
+
+(ert-deftest elk--consume-comment-test/partial ()
+  (let* ((source-code "; \tHalf \nEmpty")
+         (source-stream (elk--started-stream source-code))
+         (token (elk--consume-comment source-stream)))
+    (should (eq 'comment
+                (plist-get token :type)))
+    (should (null (plist-get token :tokens)))
+    (should (= 0
+               (plist-get token :start-pos)))
+    (should (= (1+ (s-index-of "\n" source-code))
+               (plist-get token :end-pos)))))
+
+(ert-deftest elk--consume-comment-test/nil ()
+  (let* ((source-code "NO;pe")
+         (source-stream (elk--started-stream source-code))
+         (token (elk--consume-comment source-stream)))
+    (should (null token))))
+
 
 (provide 'elk-consume-test)
 
