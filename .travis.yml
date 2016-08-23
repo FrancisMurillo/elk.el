@@ -1,13 +1,12 @@
 language: emacs-lisp
-sudo: false
-env:
-  - EMACS_VERSION=24.5
-before_install:
-  - export PATH="$HOME/bin:$PATH"
-  - wget 'https://raw.githubusercontent.com/flycheck/emacs-travis/master/emacs-travis.mk'
-  - make -f emacs-travis.mk install_emacs
-  - make -f emacs-travis.mk install_cask
-install:
-  - cask install
-script:
-  - cask exec ert-runner
+sudo: required
+arch:
+  repos:
+  packages:
+    - python
+    - emacs
+    - cask
+  script:
+    - "curl -s https://raw.githubusercontent.com/mikkeloscar/arch-travis/master/arch-travis.sh | bash"
+    - cask exec ert-runner
+
