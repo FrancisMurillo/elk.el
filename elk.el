@@ -1,3 +1,10 @@
+;;; elk.el -- Emacs Lisp source code parse for code analysis
+
+;;; Commentary:
+
+;;; Code:
+
+
 ;; -*- lexical-binding: t; -*-
 
 (require 'dash)
@@ -25,8 +32,8 @@
         current-value)))))
 
 
-(defun elk--test-stream (text)
-  "For testing purposes"
+(defun elk--started-stream (text)
+  "Start a stream so that it has a current value already. This is for testing."
   (let ((stream (elk--text-stream text)))
     (funcall stream) ;; Consume first to start generator L
     stream))
@@ -97,7 +104,7 @@
 
 (defun elk--atom-letter-p (letter)
   "Is letter an valid atom letter"
-  (s-matches-p "[A-z0-9-/:&<>=+,!%*\\.|\\@?]" letter))
+  (s-matches-p "[A-z0-9-/$:&<>=+,!%*\\.|\\@?]" letter))
 
 
 (defun elk--consume-whitespace (stream)
@@ -137,6 +144,8 @@
       (let ((start-pos (cdr this-char))
             (current-char (elk--use-stream stream nil)))
         (while (elk--atom-letter-p (car (elk--use-stream stream 'current)))
+          (when (elk--letter-escape-p (car (elk--use-stream stream 'current)))
+            (setf current-char (elk--use-stream stream nil)))
           (setf current-char (elk--use-stream stream nil)))
         (elk--create-token 'atom (list) start-pos (cdr current-char))))
      (t nil))))
@@ -377,7 +386,6 @@
                 (stream (elk--text-stream text)))
     (elk--use-stream stream nil)
     (while (elk--stream-next-p stream)
-      ;; (message "?: %s" (car (funcall stream 'current)))
       (push (elk--dispatch-stream-handlers stream) tokens))
     (funcall (-compose
               (-partial #'elk--attach-source text)
@@ -419,3 +427,5 @@
 
 
 (provide 'elk)
+
+;;; elk.el ends here
