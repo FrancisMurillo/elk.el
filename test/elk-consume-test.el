@@ -60,7 +60,9 @@
     (should (= 0
                (plist-get token :start-pos)))
     (should (= -1
-               (plist-get token :end-pos)))))
+               (plist-get token :end-pos)))
+
+    (should-not (elk--stream-next-p source-stream))))
 
 (ert-deftest elk--consume-whitespace-test/partial ()
   (let* ((source-code " \n|\t  ")
@@ -72,13 +74,26 @@
     (should (= 0
                (plist-get token :start-pos)))
     (should (= (s-index-of "|" source-code)
-               (plist-get token :end-pos)))))
+               (plist-get token :end-pos)))
+
+    (should (elk--stream-next-p source-stream))))
 
 (ert-deftest elk--consume-whitespace-test/nil ()
   (let* ((source-code "STOP")
          (source-stream (elk--started-stream source-code))
          (token (elk--consume-whitespace source-stream)))
-    (should (null token))))
+    (should (null token))
+
+    (should (elk--stream-next-p source-stream))))
+
+(ert-deftest elk--consume-whitespace-test/consuming ()
+  (mapc (lambda (whitespace-character)
+          (let* ((source-code " ")
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-whitespace source-stream)))
+            (should-not (null token))
+            (should-not (elk--stream-next-p source-stream))))
+        (list " " "\n" "\t")))
 
 
 ;;* consume-comment
@@ -92,7 +107,9 @@
     (should (= 0
                (plist-get token :start-pos)))
     (should (= -1
-               (plist-get token :end-pos)))))
+               (plist-get token :end-pos)))
+
+    (should-not (elk--stream-next-p source-stream))))
 
 (ert-deftest elk--consume-comment-test/partial ()
   (let* ((source-code "; \tHalf \nEmpty")
@@ -104,13 +121,25 @@
     (should (= 0
                (plist-get token :start-pos)))
     (should (= (1+ (s-index-of "\n" source-code))
-               (plist-get token :end-pos)))))
+               (plist-get token :end-pos)))
+
+    (should (elk--stream-next-p source-stream))))
 
 (ert-deftest elk--consume-comment-test/nil ()
   (let* ((source-code "NO;pe")
          (source-stream (elk--started-stream source-code))
          (token (elk--consume-comment source-stream)))
-    (should (null token))))
+    (should (null token))
+    (should (elk--stream-next-p source-stream))))
+
+(ert-deftest elk--consume-comment-test/consuming ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-comment source-stream)))
+            (should-not (null token))
+            (should-not (elk--stream-next-p source-stream))))
+        (list ";" ";\n")))
 
 
 (provide 'elk-consume-test)
