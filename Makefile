@@ -1,18 +1,12 @@
-emacs ?= emacs
-BEMACS = $(emacs) -batch -l targets/elpa.el
+CASK ?= cask
+EMACS ?= emacs
 
 all: test
 
-update:
-	$(emacs) -batch -l targets/install-deps.el
+test: unit
 
-test: clean
-	$(BEMACS) -l tiny-test.el -l tiny.el -f ert-run-tests-batch-and-exit
+unit:
+	$(CASK) exec ert-runner
 
-compile:
-	$(emacs) -Q -batch -f batch-byte-compile tiny.el
-
-clean:
-	rm -f f.elc
-
-.PHONY: all test
+ecukes:
+	$(CASK) exec ecukes
