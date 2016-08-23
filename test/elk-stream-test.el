@@ -1,4 +1,4 @@
-;;; elk.el-test.el --- elk: main test                -*- lexical-binding: t; -*-
+;;; elk.el-test.el --- elk: main test
 
 ;; Copyright (C) 2016  Francis Murillo
 
@@ -59,4 +59,5 @@
 
 
 (provide 'elk-stream-test)
+
 ;;; elk.el-test.el ends here
