@@ -1,4 +1,4 @@
-;;; elk.el --- Emacs Lisp source code parser for code analysis
+;;; elk.el --- Emacs Lisp source code parser for code analysis  -*- lexical-binding: t; -*-
 ;;
 ;; Filename: elk.el
 ;; Description: A simple parser for Emacs Lisp
@@ -44,6 +44,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
 ;;; Code:
+
+(require 'cl-lib)
 
 (require 'dash)
 (require 's)

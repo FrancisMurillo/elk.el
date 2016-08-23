@@ -1,4 +1,4 @@
-;;; elk.el-test.el --- elk: main test
+;;; elk.el-test.el --- elk: main test  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2016  Francis Murillo
 
@@ -27,19 +27,14 @@
 (require 's)
 
 
-(defun equal-pair (expected-pair actual-pair)
-  (and (string-equal (car expected-pair) (car actual-pair))
-       (= (cdr expected-pair) (cdr actual-pair))))
-
-(defun char-at (n text)
-  (cons (substring-no-properties text n (1+ n)) n))
-
 (ert-deftest elk--text-stream-test/usage ()
   (let* ((text "abcde")
          (stream (elk--text-stream text)))
-    (should (equal 'base
+    ;; Not started test
+    (should (eq 'base
                    (funcall stream 'current)))
 
+    ;; Actual iteration
     (dotimes (index (length text))
       (should (equal-pair (char-at index text)
                           (funcall stream 'peek)))
@@ -48,6 +43,7 @@
       (should (equal-pair (char-at index text)
                           (funcall stream 'current))))
 
+    ;; End of iteration
     (should (eq 'stop
                 (funcall stream 'peek)))
     (should (eq 'stop
@@ -55,8 +51,58 @@
     (should (eq 'stop
                 (funcall stream 'current)))
 
+    ;; Idempotence
     (should (eq 'stop
                 (funcall stream 'next)))))
+
+(ert-deftest elk--text-stream-test/empty ()
+  (let* ((text "")
+         (stream (elk--text-stream text)))
+    ;; Should be base, not stop
+    (should (eq 'base
+                (funcall stream 'current)))
+
+    ;; Should say stop on next values
+    (should (eq 'stop
+                (funcall stream 'peek)))
+    (should (eq 'stop
+                (funcall stream 'next)))))
+
+
+(ert-deftest elk--started-stream-test/usage ()
+  (let* ((text "abc")
+         (stream (elk--started-stream text)))
+    ;; Should start at the first character
+    (should-not (eq 'base
+                    (funcall stream 'current)))
+
+    (should (equal-pair (char-at 0 text)
+                        (funcall stream 'current)))
+    (should (equal-pair (char-at 1 text)
+                        (funcall stream 'peek)))))
+
+
+(ert-deftest elk--use-stream-test/usage ()
+  (let* ((text "z")
+         (stream (elk--text-stream text))
+         (default-pair (cons "" -1)))
+    ;; Not started test
+    (should (eq default-pair
+                (elk--use-stream stream 'current default-pair)))
+
+    ;; Should work normally
+    (should (equal-pair (char-at 0 text)
+                        (elk--use-stream stream 'peek default-pair)))
+    (should (equal-pair (char-at 0 text)
+                        (elk--use-stream stream 'next default-pair)))
+    (should (equal-pair (char-at 0 text)
+                        (elk--use-stream stream 'current default-pair)))
+
+    ;; Should default
+    (should (equal-pair default-pair
+                        (elk--use-stream stream 'peek default-pair)))
+    (should (equal-pair default-pair
+                        (elk--use-stream stream 'next default-pair)))))
 
 
 (provide 'elk-stream-test)
