@@ -60,22 +60,24 @@
 
 
 ;;* Private
-(defvar elk--stream-handlers
+(defvar elk--stream-consumers
   (list
    ;; Fillers
    #'elk--consume-whitespace
    #'elk--consume-comment
 
    ;; Types
-   #'elk--consume-text ;; Or string if you'd like
-   #'elk--consume-number
-
+   #'elk--consume-text ; Or string if you'd like
 
    ;; Symbols
-   #'elk--consume-quote ;; Quoting must come before atoms and expressions
+   #'elk--consume-quote ; Quoting must come before atoms and expressions
    #'elk--consume-atom
-   #'elk--consume-expression)
-  "Elisp parsing handlers, order is important")
+
+   ;; Matching Braces
+   #'elk--consume-expression
+   ;; TODO: Does not handle [] or {}
+   )
+  "Elisp parsing handlers, order is important.")
 
 
 ;;* Stream
@@ -136,54 +138,54 @@
 ;;* Letter Predicates
 ;;; Letters are just text/strings of length 1
 (defun elk--whitespace-p (letter)
-  "Is letter a whitespace?"
+  "Is LETTER a whitespace?"
   (or (string-equal letter "")
       (string-equal letter " ")
       (string-equal letter "\n")
       (string-equal letter "\t")))
 
 (defun elk--comment-p (letter)
-  "Is letter is comment?"
+  "Is LETTER is comment?"
   (string-equal letter ";"))
 
 (defun elk--newline-p (letter)
-  "Is letter a newline?"
+  "Is LETTER a newline?"
   (string-equal letter "\n"))
 
 (defun elk--quote-p (letter)
-  "Is letter a quoter?"
+  "Is LETTER a quoter?"
   (or (string-equal letter "#")
       (string-equal letter "\`")
       (string-equal letter "'")))
 
 (defun elk--text-quote-p (letter)
-  "Is letter a text quote?"
+  "Is LETTER a text quote?"
   (string-equal letter "\""))
 
 (defun elk--text-escape-p (letter)
-  "Is letter a text escape?"
+  "Is LETTER a text escape?"
   (string-equal letter "\\"))
 
 (defun elk--letter-escape-p (letter)
-  "Is letter a text escape?"
+  "Is LETTER a text escape?"
   (string-equal letter "?"))
 
 (defun elk--expression-start-p (letter)
-  "Is letter an expression starter?"
+  "Is LETTER an expression starter?"
   (string-equal letter "("))
 
 (defun elk--expression-close-p (letter)
-  "Is letter an expression closer?"
+  "Is LETTER an expression closer?"
   (string-equal letter ")"))
 
 (defun elk--atom-letter-p (letter)
-  "Is letter an valid atom letter?"
+  "Is LETTER an valid atom letter?"
   (s-matches-p "[A-z0-9-/$:&<>=+,!%*\\.|\\@?]" letter))
 
 
 ;;* Consumer
 (defun elk--consume-whitespace (stream)
-  "Consume whitespace"
+  "Consume STREAM for a whitespace."
   (let ((this-char (elk--use-stream stream 'current)))
     (when (elk--whitespace-p (car this-char))
       (let ((start-pos (cdr this-char))
@@ -193,7 +195,7 @@
         (elk--create-token 'whitespace (list) start-pos (cdr current-char))))))
 
 (defun elk--consume-comment (stream)
-  "Consume a comment"
+  "Consume STREAM a comment."
   (let ((this-char (elk--use-stream stream 'current)))
     (when (elk--comment-p (car this-char))
       (let ((start-pos (cdr this-char))
@@ -201,8 +203,22 @@
         (while (and (elk--stream-next-p stream)
                     (not (elk--newline-p (car (elk--use-stream stream 'current)))))
           (setf current-char (elk--use-stream stream nil)))
-        (setf current-char (elk--use-stream stream nil)) ;; Consume the newline as well
+        (setf current-char (elk--use-stream stream nil)) ; Consume the newline as well
         (elk--create-token 'comment (list) start-pos (cdr current-char))))))
+
+(defun elk--consume-text (stream)
+  "Consume STREAM for a text declaration."
+  (let ((this-char (elk--use-stream stream 'current)))
+    (when (elk--text-quote-p (car this-char))
+      (let ((start-pos (cdr this-char))
+            (current-char (elk--use-stream stream nil)))
+        (while (and (elk--stream-next-p stream)
+                    (not (elk--text-quote-p (car (elk--use-stream stream 'current)))))
+          (when (elk--text-escape-p (car (elk--use-stream stream 'current)))
+            (setf current-char (elk--use-stream stream nil)))
+          (setf current-char (elk--use-stream stream nil)))
+        (setf current-char (elk--use-stream stream nil))
+        (elk--create-token 'text (list) start-pos (cdr current-char))))))
 
 (defun elk--consume-atom (stream)
   "Consume an atom name"
@@ -225,20 +241,6 @@
         (elk--create-token 'atom (list) start-pos (cdr current-char))))
      (t nil))))
 
-(defun elk--consume-text (stream)
-  "Consume a text declaration"
-  (let ((this-char (elk--use-stream stream 'current)))
-    (when (elk--text-quote-p (car this-char))
-      (let ((start-pos (cdr this-char))
-            (current-char (elk--use-stream stream nil)))
-        (while (and (elk--stream-next-p stream)
-                    (not (elk--text-quote-p (car (elk--use-stream stream 'current)))))
-          (when (elk--text-escape-p (car (elk--use-stream stream 'current)))
-            (setf current-char (elk--use-stream stream nil)))
-          (setf current-char (elk--use-stream stream nil)))
-        (setf current-char (elk--use-stream stream nil))
-        (elk--create-token 'text (list) start-pos (cdr current-char))))))
-
 (defun elk--consume-expression (stream)
   "Consume an expression"
   (let ((this-char (elk--use-stream stream 'current)))
@@ -248,7 +250,7 @@
             (expression-tokens (list)))
         (while (and (elk--stream-next-p stream)
                     (not (elk--expression-close-p (car current-char))))
-          (push (elk--dispatch-stream-handlers stream) expression-tokens)
+          (push (elk--dispatch-stream-consumers stream) expression-tokens)
           (setf current-char (elk--use-stream stream 'current)))
         (setf current-char (elk--use-stream stream nil))
         (elk--create-token 'expression (seq-reverse expression-tokens) start-pos (cdr current-char))))))
@@ -261,20 +263,18 @@
             (next-char (elk--use-stream stream nil)))
         (when (elk--quote-p (car next-char))
           (setf next-char (elk--use-stream stream nil)))
-        (elk--create-token 'quote (list (elk--dispatch-stream-handlers stream))
+        (elk--create-token 'quote (list (elk--dispatch-stream-consumers stream))
                            start-pos (cdr next-char))))))
 
 
 
-(defun elk--dispatch-stream-handlers (stream)
+(defun elk--dispatch-stream-consumers (stream)
   "Execute elisp parsing functions"
   (lexical-let ((value nil))
-    ;; (message "!: %s" (car (funcall stream 'current)))
     (mapc (lambda (handler)
             (unless value
-              ;; (message "*-> %s" (symbol-name handler))
               (setf value (funcall handler stream))))
-          elk--stream-handlers)
+          elk--stream-consumers)
     value))
 
 
@@ -312,8 +312,9 @@
                                           (substring-no-properties source-text
                                                                    start-pos
                                                                    end-pos))
-                               (when (not (nullp sub-tokens))
-                                 (plist-put new-token :tokens (elk--attach-source source-text sub-tokens)))))))
+                               (if (not (null sub-tokens))
+                                   (plist-put new-token :tokens (elk--attach-source source-text sub-tokens))
+                                 new-token)))))
     (-map recurser tokens)))
 
 (defun elk--leveler (level tokens)

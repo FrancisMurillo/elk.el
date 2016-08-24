@@ -142,6 +142,52 @@
         (list ";" ";\n")))
 
 
+;;* consume-text
+(ert-deftest elk--consume-text-test/base ()
+  (let* ((source-code "\"Meow\"")
+         (source-stream (elk--started-stream source-code))
+         (token (elk--consume-text source-stream)))
+    (should (eq 'text
+                (plist-get token :type)))
+    (should (null (plist-get token :tokens)))
+    (should (= 0
+               (plist-get token :start-pos)))
+    (should (= -1
+               (plist-get token :end-pos)))
+
+    (should-not (elk--stream-next-p source-stream))))
+
+(ert-deftest elk--consume-text-test/partial ()
+  (let* ((source-code "\" Cartoon \"|; Saloon")
+         (source-stream (elk--started-stream source-code))
+         (token (elk--consume-text source-stream)))
+    (should (eq 'text
+                (plist-get token :type)))
+    (should (null (plist-get token :tokens)))
+    (should (= 0
+               (plist-get token :start-pos)))
+    (should (= (s-index-of "|" source-code)
+               (plist-get token :end-pos)))
+
+    (should (elk--stream-next-p source-stream))))
+
+(ert-deftest elk--consume-text-test/nil ()
+  (let* ((source-code "(What the hell)")
+         (source-stream (elk--started-stream source-code))
+         (token (elk--consume-text source-stream)))
+    (should (null token))
+    (should (elk--stream-next-p source-stream))))
+
+(ert-deftest elk--consume-text-test/consuming ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-text source-stream)))
+            (should-not (null token))
+            (should (elk--stream-stop-p source-stream))))
+        (list "\"\"" "\"\ \"")))
+
+
 (provide 'elk-consume-test)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
