@@ -241,6 +241,59 @@
         (list "'" "#'" "`")))
 
 
+;;* consume-atom
+(ert-deftest elk--consume-atom-test/base ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-atom source-stream)))
+            (should (eq 'atom
+                        (plist-get token :type)))
+            (should (null (plist-get token :tokens)))
+            (should (= 0
+                       (plist-get token :start-pos)))
+            (should (= -1
+                       (plist-get token :end-pos)))
+
+            (should-not (elk--stream-next-p source-stream))))
+        (list "simple-name" "abc-and-123" "namespaced/function" "colonized:$callback" "my\ space"
+              "?Q" "?\Q")))
+
+(ert-deftest elk--consume-atom-test/partial ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-atom source-stream)))
+            (should (eq 'atom
+                        (plist-get token :type)))
+            (should (null (plist-get token :tokens)))
+            (should (= 0
+                       (plist-get token :start-pos)))
+            (should (= (s-index-of " " source-code)
+                       (plist-get token :end-pos)))
+
+            (should (elk--stream-next-p source-stream))))
+        (list "oneword (1)" "$xyz +123" "a\ b\ c again" "?\P ; Meow" "?Q ; Purr}")))
+
+(ert-deftest elk--consume-atom-test/nil ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-atom source-stream)))
+            (should (null token))
+            (should (elk--stream-next-p source-stream))))
+        (list " legit token" "\nreally whitespace" "\tmorestuff" "(-:" ")-(")))
+
+(ert-deftest elk--consume-atom-test/consuming ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-atom source-stream)))
+            (should-not (null token))
+            (should (elk--stream-stop-p source-stream))))
+        (list "a" "?b" "?\c")))
+
+
 (provide 'elk-consume-test)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

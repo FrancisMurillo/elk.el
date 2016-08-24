@@ -261,7 +261,7 @@
           (plist-put base-token :quote-text quote-text))))))
 
 (defun elk--consume-atom (stream)
-  "Consume an atom name"
+  "Consume STREAM for an atom name."
   (let ((this-char (elk--use-stream stream 'current)))
     (cond
      ((elk--letter-escape-p (car this-char))
@@ -296,9 +296,8 @@
         (elk--create-token 'expression (seq-reverse expression-tokens) start-pos (cdr current-char))))))
 
 
-
 (defun elk--dispatch-stream-consumers (stream)
-  "Execute elisp parsing functions"
+  "Execute elisp parsing functions over the STREAM consumers."
   (lexical-let ((value nil))
     (mapc (lambda (handler)
             (unless value
