@@ -282,7 +282,7 @@
      (t nil))))
 
 (defun elk--consume-expression (stream)
-  "Consume an expression"
+  "Consume STREAM for expressions"
   (let ((this-char (elk--use-stream stream 'current)))
     (when (elk--expression-start-p (car this-char))
       (let ((start-pos (cdr this-char))
@@ -332,7 +332,7 @@
                  (recurser (lambda (token)
                              (let ((type (plist-get token :type)))
                                (pcase type
-                                 ((or `atom `text `comment)
+                                 ((or `atom `text `comment `whitespace)
                                   (let ((start-pos (plist-get token :start-pos))
                                         (end-pos  (plist-get token :end-pos))
                                         (new-token (-copy token)))
@@ -475,18 +475,43 @@
 
 
 (defun elk--tokenize (text)
-  "Tokenize an elisp text"
+  "Tokenize an elisp source TEXT."
   (lexical-let ((tokens (list))
                 (stream (elk--text-stream text)))
     (elk--use-stream stream nil)
     (while (elk--stream-next-p stream)
-      (push (elk--dispatch-stream-handlers stream) tokens))
+      (push (elk--dispatch-stream-consumers stream) tokens))
     (funcall (-compose
               (-partial #'elk--attach-source text)
               #'elk--attach-token-id
               #'elk--attach-level
               #'elk--attach-expression-index
               #'seq-reverse)
+             tokens)))
+
+(defun elk--codify (tokens)
+  "Convert TOKENS into source code"
+  (letrec ((texify (lambda (tokens)
+                     (lexical-let ((recurser texify))
+                       (mapcar (lambda (token)
+                                 (let* ((type (plist-get token :type))
+                                        (text-tokens
+                                         (pcase type
+                                           (`quote
+                                            (let ((sub-tokens (plist-get token :tokens))
+                                                  (quote-text (plist-get token :quote-text)))
+                                              (list quote-text (funcall recurser sub-tokens))))
+                                           (`expression
+                                            (let ((sub-tokens (plist-get token :tokens)))
+                                              (list "(" (funcall recurser sub-tokens) ")")))
+                                           (_ (plist-get token :text)))))
+                                   text-tokens))
+                               tokens)))))
+    (funcall (-compose
+              (-rpartial #'string-join "")
+              #'-flatten
+              texify
+              )
              tokens)))
 
 (defvar elk-current-tokens (list)
