@@ -50,6 +50,34 @@
 (require 'dash)
 (require 's)
 
+;;* Package
+(defgroup elk nil
+  "Parse Emacs Lisp source code"
+  :prefix "elk"
+  :group 'tools
+  :link (list 'url-link
+              :tag "Github" "https://github.com/FrancisMurillo/elk.el"))
+
+
+;;* Private
+(defvar elk--stream-handlers
+  (list
+   ;; Fillers
+   #'elk--consume-whitespace
+   #'elk--consume-comment
+
+   ;; Types
+   #'elk--consume-text ;; Or string if you'd like
+   #'elk--consume-number
+
+
+   ;; Symbols
+   #'elk--consume-quote ;; Quoting must come before atoms and expressions
+   #'elk--consume-atom
+   #'elk--consume-expression)
+  "Elisp parsing handlers, order is important")
+
+
 ;;* Stream
 (defun elk--text-stream (text)
   "Create a text stream used to tokenize lisp"
@@ -71,13 +99,11 @@
                               'stop))
         current-value)))))
 
-
 (defun elk--started-stream (text)
   "Start a stream so that it has a current value already. This is for testing."
   (let ((stream (elk--text-stream text)))
     (funcall stream) ;; Consume first to start generator L
     stream))
-
 
 (defun elk--use-stream (stream command &optional default)
   "Execute stream commands safely"
@@ -88,10 +114,13 @@
             (cons "" -1))
       base-value)))
 
-
 (defun elk--stream-next-p (stream)
-  "Check if a stream is stoppped"
+  "Check if a stream is has more values."
   (not (eq (funcall stream 'peek) 'stop)))
+
+(defun elk--stream-stop-p (stream)
+  "Check if a stream is stopped."
+  (eq (funcall stream 'current) 'stop))
 
 
 ;;* Token
@@ -104,52 +133,55 @@
    :end-pos end-pos))
 
 
-;;* Consumer
+;;* Letter Predicates
+;;; Letters are just text/strings of length 1
 (defun elk--whitespace-p (letter)
-  "Is letter a whitespace"
+  "Is letter a whitespace?"
   (or (string-equal letter "")
-      (and (not (string-equal letter ""))
-           (string-equal (s-trim letter) ""))))
+      (string-equal letter " ")
+      (string-equal letter "\n")
+      (string-equal letter "\t")))
 
 (defun elk--comment-p (letter)
-  "Is letter is comment"
+  "Is letter is comment?"
   (string-equal letter ";"))
 
 (defun elk--newline-p (letter)
-  "Is letter a newline"
+  "Is letter a newline?"
   (string-equal letter "\n"))
 
 (defun elk--quote-p (letter)
-  "Is letter a quoter"
+  "Is letter a quoter?"
   (or (string-equal letter "#")
       (string-equal letter "\`")
       (string-equal letter "'")))
 
 (defun elk--text-quote-p (letter)
-  "Is letter a text quote"
+  "Is letter a text quote?"
   (string-equal letter "\""))
 
 (defun elk--text-escape-p (letter)
-  "Is letter a text escape"
+  "Is letter a text escape?"
   (string-equal letter "\\"))
 
 (defun elk--letter-escape-p (letter)
-  "Is letter a text escape"
+  "Is letter a text escape?"
   (string-equal letter "?"))
 
 (defun elk--expression-start-p (letter)
-  "Is letter an expression starter"
+  "Is letter an expression starter?"
   (string-equal letter "("))
 
 (defun elk--expression-close-p (letter)
-  "Is letter an expression closer"
+  "Is letter an expression closer?"
   (string-equal letter ")"))
 
 (defun elk--atom-letter-p (letter)
-  "Is letter an valid atom letter"
+  "Is letter an valid atom letter?"
   (s-matches-p "[A-z0-9-/$:&<>=+,!%*\\.|\\@?]" letter))
 
 
+;;* Consumer
 (defun elk--consume-whitespace (stream)
   "Consume whitespace"
   (let ((this-char (elk--use-stream stream 'current)))
@@ -169,7 +201,7 @@
         (while (and (elk--stream-next-p stream)
                     (not (elk--newline-p (car (elk--use-stream stream 'current)))))
           (setf current-char (elk--use-stream stream nil)))
-        (setf current-char (elk--use-stream stream nil))
+        (setf current-char (elk--use-stream stream nil)) ;; Consume the newline as well
         (elk--create-token 'comment (list) start-pos (cdr current-char))))))
 
 (defun elk--consume-atom (stream)
@@ -233,16 +265,6 @@
                            start-pos (cdr next-char))))))
 
 
-(defvar elk--stream-handlers
-  (list
-   #'elk--consume-whitespace
-   #'elk--consume-comment
-   #'elk--consume-quote
-   #'elk--consume-atom
-   #'elk--consume-text
-   #'elk--consume-expression)
-  "Elisp parsing handlers, order is important")
-
 
 (defun elk--dispatch-stream-handlers (stream)
   "Execute elisp parsing functions"
@@ -279,23 +301,19 @@
   "Label atoms based on their source text"
   (lexical-let* ((source-text text)
                  (recurser (lambda (token)
-                             (let ((type (plist-get token :type)))
-                               (pcase type
-                                 ((or `atom `text)
-                                  (let ((start-pos (plist-get token :start-pos))
-                                        (end-pos  (plist-get token :end-pos))
-                                        (new-token (-copy token)))
-                                    (when (= end-pos -1)
-                                      (setf end-pos (length source-text))
-                                      (plist-put new-token :end-pos end-pos))
-                                    (plist-put new-token :text
-                                              (substring-no-properties source-text
-                                                                       start-pos
-                                                                       end-pos))))
-                                 ((or `expression `quote)
-                                  (let* ((sub-tokens (plist-get token :tokens)))
-                                    (plist-put(-copy token) :tokens (elk--attach-source source-text sub-tokens))))
-                                 (_ token))))))
+                             (let ((start-pos (plist-get token :start-pos))
+                                   (end-pos  (plist-get token :end-pos))
+                                   (new-token (-copy token))
+                                   (sub-tokens (plist-get token :tokens)))
+                               (when (= end-pos -1)
+                                 (setf end-pos (length source-text))
+                                 (plist-put new-token :end-pos end-pos))
+                               (plist-put new-token :text
+                                          (substring-no-properties source-text
+                                                                   start-pos
+                                                                   end-pos))
+                               (when (not (nullp sub-tokens))
+                                 (plist-put new-token :tokens (elk--attach-source source-text sub-tokens)))))))
     (-map recurser tokens)))
 
 (defun elk--leveler (level tokens)
@@ -325,7 +343,7 @@
 
 (defun elk--marker (parent-id generator tokens)
   "Recurser of elk--attach-token-id"
-    (-map (lambda (token)
+  (-map (lambda (token)
           (let ((type (plist-get token :type))
                 (marked-token (plist-put (-copy token) :id (funcall generator))))
             (setf marked-token (plist-put marked-token :parent-id parent-id))
@@ -401,13 +419,13 @@
   "Filter an atom if it is not built-in or redundant"
   (funcall (-andfn (-not
                     (-compose
-                          #'special-form-p
-                          #'intern-soft))
+                     #'special-form-p
+                     #'intern-soft))
                    (-not (-compose
                           #'subrp
                           #'symbol-function
                           #'intern-soft)))
-            atom))
+           atom))
 
 
 (defun elk--summarize-atoms (tokens)

@@ -92,7 +92,7 @@
                  (source-stream (elk--started-stream source-code))
                  (token (elk--consume-whitespace source-stream)))
             (should-not (null token))
-            (should-not (elk--stream-next-p source-stream))))
+            (should (elk--stream-stop-p source-stream))))
         (list " " "\n" "\t")))
 
 
@@ -138,7 +138,7 @@
                  (source-stream (elk--started-stream source-code))
                  (token (elk--consume-comment source-stream)))
             (should-not (null token))
-            (should-not (elk--stream-next-p source-stream))))
+            (should (elk--stream-stop-p source-stream))))
         (list ";" ";\n")))
 
 
