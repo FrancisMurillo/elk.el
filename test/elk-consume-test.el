@@ -188,6 +188,59 @@
         (list "\"\"" "\"\ \"")))
 
 
+;;* consume-quote
+(ert-deftest elk--consume-quote-test/base ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-quote source-stream)))
+            (should (eq 'quote
+                        (plist-get token :type)))
+            (should-not (null (plist-get token :tokens)))
+            (should (= 0
+                       (plist-get token :start-pos)))
+            (should (= -1
+                       (plist-get token :end-pos)))
+
+            (should-not (elk--stream-next-p source-stream))))
+        (list "'quote" "#'function" "`back-quote" "'spa\ ced")))
+
+(ert-deftest elk--consume-quote-test/partial ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-quote source-stream)))
+            (should (eq 'quote
+                        (plist-get token :type)))
+            (should-not (null (plist-get token :tokens)))
+            (should (= 0
+                       (plist-get token :start-pos)))
+            (should (= (s-index-of " " source-code)
+                       (plist-get token :end-pos)))
+
+            (should (elk--stream-next-p source-stream))))
+        (list "'quote atom" "#'function atom" "`back-quote atom")))
+
+(ert-deftest elk--consume-quote-test/nil ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-quote source-stream)))
+            (should (null token))
+            (should (elk--stream-next-p source-stream))))
+        (list "atom 'quote" "atom #'function" "atom `back-quote" "(expressive)" "#incomplete")))
+
+(ert-deftest elk--consume-quote-test/consuming ()
+  ;; Edge case of nothing being actually quoted but still consumed
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-quote source-stream)))
+            (should-not (null token))
+            (should (elk--stream-stop-p source-stream))))
+        (list "'" "#'" "`")))
+
+
 (provide 'elk-consume-test)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

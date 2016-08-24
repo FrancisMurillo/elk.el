@@ -82,33 +82,45 @@
 
 ;;* Stream
 (defun elk--text-stream (text)
-  "Create a text stream used to tokenize lisp"
+  "Create a TEXT stream used to tokenize Emacs code."
   (lexical-let ((current-text text)
                 (text-length (length text))
                 (current-value 'base)
                 (index 0))
-    (lambda (&optional command)
-      (cond
-       ((eq command 'peek) (if (< index text-length)
-                               (cons (substring-no-properties current-text index (1+ index)) index)
-                             'stop))
-       ((eq command 'current) current-value)
-       (t
-        (setf current-value (if (< index text-length)
-                                (prog1
-                                    (cons (substring-no-properties current-text index (1+ index)) index)
-                                  (setf index (1+ index)))
-                              'stop))
-        current-value)))))
+    (lambda (&optional command increment)
+      (let* ((incrementer (if (null increment)
+                              0
+                            (1- increment)))
+             (incremented-index (+ index incrementer)))
+        (cond
+         ((eq command 'peek)
+          (if (< incremented-index text-length)
+              (cons (substring-no-properties current-text
+                                             incremented-index
+                                             (1+ incremented-index))
+                    incremented-index)
+            'stop))
+         ((eq command 'current) current-value)
+         (t
+          (setf current-value
+                (if (< incremented-index text-length)
+                    (prog1
+                        (cons (substring-no-properties current-text
+                                                       incremented-index
+                                                       (1+ incremented-index))
+                              incremented-index)
+                      (setf index (1+  incremented-index)))
+                  'stop))
+          current-value))))))
 
 (defun elk--started-stream (text)
-  "Start a stream so that it has a current value already. This is for testing."
+  "Start a stream so that it has a current TEXT already.  This is for testing."
   (let ((stream (elk--text-stream text)))
     (funcall stream) ;; Consume first to start generator L
     stream))
 
 (defun elk--use-stream (stream command &optional default)
-  "Execute stream commands safely"
+  "Execute STREAM COMMAND safely.  This also includes a DEFAULT  if needed."
   (let ((base-value (funcall stream command)))
     (if (or (eq base-value 'base)
             (eq base-value 'stop))
@@ -117,17 +129,17 @@
       base-value)))
 
 (defun elk--stream-next-p (stream)
-  "Check if a stream is has more values."
+  "Check if a STREAM is has more values."
   (not (eq (funcall stream 'peek) 'stop)))
 
 (defun elk--stream-stop-p (stream)
-  "Check if a stream is stopped."
+  "Check if a STREAM is stopped."
   (eq (funcall stream 'current) 'stop))
 
 
 ;;* Token
 (defun elk--create-token (type tokens start-pos end-pos)
-  "Create a token with a specified token type, token value and start and end range"
+  "Create a token with a specified token TYPE, TOKENS and START-POS and END-POS range."
   (list
    :type type
    :tokens tokens
@@ -154,9 +166,15 @@
 
 (defun elk--quote-p (letter)
   "Is LETTER a quoter?"
-  (or (string-equal letter "#")
-      (string-equal letter "\`")
-      (string-equal letter "'")))
+  (string-equal letter "'"))
+
+(defun elk--function-quote-p (letter)
+  "Is LETTER a function quoter?"
+  (string-equal letter "#"))
+
+(defun elk--back-quote-p (letter)
+  "Is LETTER a back quoter?"
+  (string-equal letter "\`"))
 
 (defun elk--text-quote-p (letter)
   "Is LETTER a text quote?"
@@ -185,7 +203,7 @@
 
 ;;* Consumer
 (defun elk--consume-whitespace (stream)
-  "Consume STREAM for a whitespace."
+  "Consume STREAM for a whitespace.  This takes {\n}, {\t}, { } and {^M}."
   (let ((this-char (elk--use-stream stream 'current)))
     (when (elk--whitespace-p (car this-char))
       (let ((start-pos (cdr this-char))
@@ -195,7 +213,7 @@
         (elk--create-token 'whitespace (list) start-pos (cdr current-char))))))
 
 (defun elk--consume-comment (stream)
-  "Consume STREAM a comment."
+  "Consume STREAM a comment.  This takes {;}comment{\n}."
   (let ((this-char (elk--use-stream stream 'current)))
     (when (elk--comment-p (car this-char))
       (let ((start-pos (cdr this-char))
@@ -207,7 +225,7 @@
         (elk--create-token 'comment (list) start-pos (cdr current-char))))))
 
 (defun elk--consume-text (stream)
-  "Consume STREAM for a text declaration."
+  "Consume STREAM for a text declaration.  This takes {\"}text{\"}."
   (let ((this-char (elk--use-stream stream 'current)))
     (when (elk--text-quote-p (car this-char))
       (let ((start-pos (cdr this-char))
@@ -219,6 +237,28 @@
           (setf current-char (elk--use-stream stream nil)))
         (setf current-char (elk--use-stream stream nil))
         (elk--create-token 'text (list) start-pos (cdr current-char))))))
+
+(defun elk--consume-quote (stream)
+  "Consume STREAM for an atom name.  This takes {`}, {'} and {#'}."
+  (let ((this-char (elk--use-stream stream 'current))
+        (quote-text ""))
+    (when (or (elk--quote-p (car this-char))
+              (elk--back-quote-p (car this-char))
+              (and (elk--function-quote-p (car this-char))
+                   (elk--quote-p (car (elk--use-stream stream 'peek)))))
+      (let ((start-pos (cdr this-char))
+            (start-letter (car this-char))
+            (next-char (elk--use-stream stream nil)))
+        (setf quote-text start-letter)
+        (when (elk--quote-p (car next-char))
+          (setf quote-text start-letter)
+          (setf next-char (elk--use-stream stream nil)))
+        (let* ((sub-tokens (list (elk--dispatch-stream-consumers stream)))
+               (base-token (elk--create-token 'quote
+                                              sub-tokens
+                                              start-pos
+                                              (cdr (elk--use-stream stream 'current)))))
+          (plist-put base-token :quote-text quote-text))))))
 
 (defun elk--consume-atom (stream)
   "Consume an atom name"
@@ -255,17 +295,6 @@
         (setf current-char (elk--use-stream stream nil))
         (elk--create-token 'expression (seq-reverse expression-tokens) start-pos (cdr current-char))))))
 
-(defun elk--consume-quote (stream)
-  "Consume an atom name"
-  (let ((this-char (elk--use-stream stream 'current)))
-    (when (elk--quote-p (car this-char))
-      (let ((start-pos (cdr this-char))
-            (next-char (elk--use-stream stream nil)))
-        (when (elk--quote-p (car next-char))
-          (setf next-char (elk--use-stream stream nil)))
-        (elk--create-token 'quote (list (elk--dispatch-stream-consumers stream))
-                           start-pos (cdr next-char))))))
-
 
 
 (defun elk--dispatch-stream-consumers (stream)
@@ -297,24 +326,28 @@
                     (-partial #'-filter filterer))))
     (funcall pipeline tokens)))
 
+
 (defun elk--attach-source (text tokens)
   "Label atoms based on their source text"
   (lexical-let* ((source-text text)
                  (recurser (lambda (token)
-                             (let ((start-pos (plist-get token :start-pos))
-                                   (end-pos  (plist-get token :end-pos))
-                                   (new-token (-copy token))
-                                   (sub-tokens (plist-get token :tokens)))
-                               (when (= end-pos -1)
-                                 (setf end-pos (length source-text))
-                                 (plist-put new-token :end-pos end-pos))
-                               (plist-put new-token :text
-                                          (substring-no-properties source-text
-                                                                   start-pos
-                                                                   end-pos))
-                               (if (not (null sub-tokens))
-                                   (plist-put new-token :tokens (elk--attach-source source-text sub-tokens))
-                                 new-token)))))
+                             (let ((type (plist-get token :type)))
+                               (pcase type
+                                 ((or `atom `text `comment)
+                                  (let ((start-pos (plist-get token :start-pos))
+                                        (end-pos  (plist-get token :end-pos))
+                                        (new-token (-copy token)))
+                                    (when (= end-pos -1)
+                                      (setf end-pos (length source-text))
+                                      (plist-put new-token :end-pos end-pos))
+                                    (plist-put new-token :text
+                                              (substring-no-properties source-text
+                                                                       start-pos
+                                                                       end-pos))))
+                                 ((or `expression `quote)
+                                  (let* ((sub-tokens (plist-get token :tokens)))
+                                    (plist-put(-copy token) :tokens (elk--attach-source source-text sub-tokens))))
+                                 (_ token))))))
     (-map recurser tokens)))
 
 (defun elk--leveler (level tokens)

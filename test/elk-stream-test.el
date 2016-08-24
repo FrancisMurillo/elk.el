@@ -77,6 +77,29 @@
     (should (eq 'stop
                 (funcall stream 'next)))))
 
+(ert-deftest elk--text-stream-test/incremented ()
+  ;; TODO: Feature might not be needed
+  (let* ((text "+123-")
+         (stream (elk--text-stream text)))
+    ;; Not started test
+    (should (eq 'base
+                (funcall stream 'current)))
+    (should (equal-pair (char-at 0 text)
+                        (funcall stream 'next)))
+
+    (should (equal-pair (char-at 1 text)
+                        (funcall stream 'peek)))
+    (should (equal-pair (char-at 1 text)
+                        (funcall stream 'peek 1)))
+
+    (should (equal-pair (char-at 2 text)
+                        (funcall stream 'peek 2)))
+    (should (equal-pair (char-at 2 text)
+                        (funcall stream 'next 2)))
+
+    (should (equal-pair (char-at 3 text)
+                        (funcall stream 'peek)))))
+
 (ert-deftest elk--text-stream-test/empty ()
   (let* ((text "")
          (stream (elk--text-stream text)))
