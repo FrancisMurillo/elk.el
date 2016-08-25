@@ -310,26 +310,27 @@
 ;;* Pre-parsers
 (defun elk--attach-source (text tokens)
   "Label atoms based on their source TEXT and parsed TOKENS."
-  (lexical-let* ((source-text text)
-                 (recurser (lambda (token)
-                             (let ((type (plist-get token :type)))
-                               (pcase type
-                                 ((or `atom `text `comment `whitespace)
-                                  (let ((start-pos (plist-get token :start-pos))
-                                        (end-pos  (plist-get token :end-pos))
-                                        (new-token (-copy token)))
-                                    (when (= end-pos -1)
-                                      (setf end-pos (length source-text))
-                                      (plist-put new-token :end-pos end-pos))
-                                    (plist-put new-token :text
-                                              (substring-no-properties source-text
-                                                                       start-pos
-                                                                       end-pos))))
-                                 ((or `expression `quote)
-                                  (let* ((sub-tokens (plist-get token :tokens)))
-                                    (plist-put(-copy token) :tokens (elk--attach-source source-text sub-tokens))))
-                                 (_ token))))))
-    (-map recurser tokens)))
+  (letrec ((recurser
+            (lambda (text token)
+              (let ((type (plist-get token :type)))
+                (pcase type
+                  ((or `atom `text `comment `whitespace)
+                   (let ((start-pos (plist-get token :start-pos))
+                         (end-pos  (plist-get token :end-pos))
+                         (new-token (-copy token)))
+                     (when (= end-pos -1)
+                       (setf end-pos (length text))
+                       (plist-put new-token :end-pos end-pos))
+                     (plist-put new-token :text
+                                (substring-no-properties
+                                 text
+                                 start-pos
+                                 end-pos))))
+                  ((or `expression `quote)
+                   (let* ((sub-tokens (plist-get token :tokens)))
+                     (plist-put (-copy token) :tokens (funcall recurser text sub-tokens))))
+                  (_ token))))))
+    (-map (-partial recurser text) tokens)))
 
 (defun elk--attach-level (tokens)
   "Attach a level value for the TOKENS."
@@ -343,7 +344,7 @@
                      ((or `expression `quote)
                       (let ((sub-tokens (plist-get leveled-token :tokens)))
                         (plist-put (-copy leveled-token)
-                                   :tokens (elk--leveler (1+ level) sub-tokens))))
+                                   :tokens (funcall recurser (1+ level) sub-tokens))))
                      (_ leveled-token))))
                tokens))))
     (funcall recurser 0 tokens)))
@@ -367,7 +368,7 @@
                      ((or `expression `quote)
                       (let ((sub-tokens (plist-get marked-token :tokens)))
                         (plist-put (-copy marked-token)
-                                   :tokens (elk--marker
+                                   :tokens (funcall recurser
                                             (plist-get marked-token :id)
                                             generator sub-tokens))))
                      (_ marked-token))))
@@ -385,7 +386,7 @@
                              ((or `expression `quote)
                               (let ((sub-tokens (plist-get indexed-token :tokens)))
                                 (plist-put (-copy indexed-token)
-                                           :tokens (elk--indexer sub-tokens))))
+                                           :tokens (funcall recurser sub-tokens))))
                              (_ indexed-token))))
                        tokens))))
     (funcall recurser tokens)))
@@ -397,7 +398,7 @@
   (lexical-let ((stream (elk--text-stream text)))
     (elk--use-stream stream nil) ; Start stream
     (lambda ()
-      (if (elk--stream-next-p stream)
+      (if (not (elk--stream-stop-p stream))
           (elk--dispatch-stream-consumers stream)
         'stop))))
 
@@ -421,22 +422,23 @@
 
 (defun elk--codify (tokens)
   "Convert TOKENS into source code."
-  (letrec ((texify (lambda (tokens)
-                     (lexical-let ((recurser texify))
-                       (mapcar (lambda (token)
-                                 (let* ((type (plist-get token :type))
-                                        (text-tokens
-                                         (pcase type
-                                           (`quote
-                                            (let ((sub-tokens (plist-get token :tokens))
-                                                  (quote-text (plist-get token :quote-text)))
-                                              (list quote-text (funcall recurser sub-tokens))))
-                                           (`expression
-                                            (let ((sub-tokens (plist-get token :tokens)))
-                                              (list "(" (funcall recurser sub-tokens) ")")))
-                                           (_ (plist-get token :text)))))
-                                   text-tokens))
-                               tokens)))))
+  (letrec ((texify
+       (lambda (tokens)
+         (lexical-let ((recurser texify))
+           (mapcar (lambda (token)
+                     (let* ((type (plist-get token :type))
+                         (text-tokens
+                          (pcase type
+                            (`quote
+                             (let ((sub-tokens (plist-get token :tokens))
+                                 (quote-text (plist-get token :quote-text)))
+                               (list quote-text (funcall recurser sub-tokens))))
+                            (`expression
+                             (let ((sub-tokens (plist-get token :tokens)))
+                               (list "(" (funcall recurser sub-tokens) ")")))
+                            (_ (plist-get token :text)))))
+                       text-tokens))
+                   tokens)))))
     (funcall (-compose
               (-rpartial #'string-join "")
               #'-flatten
