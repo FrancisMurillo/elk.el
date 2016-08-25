@@ -311,26 +311,28 @@
 (defun elk--attach-source (text tokens)
   "Label atoms based on their source TEXT and parsed TOKENS."
   (letrec ((recurser
-            (lambda (text token)
-              (let ((type (plist-get token :type)))
-                (pcase type
-                  ((or `atom `text `comment `whitespace)
-                   (let ((start-pos (plist-get token :start-pos))
-                         (end-pos  (plist-get token :end-pos))
-                         (new-token (-copy token)))
-                     (when (= end-pos -1)
-                       (setf end-pos (length text))
-                       (plist-put new-token :end-pos end-pos))
-                     (plist-put new-token :text
-                                (substring-no-properties
-                                 text
-                                 start-pos
-                                 end-pos))))
-                  ((or `expression `quote)
-                   (let* ((sub-tokens (plist-get token :tokens)))
-                     (plist-put (-copy token) :tokens (funcall recurser text sub-tokens))))
-                  (_ token))))))
-    (-map (-partial recurser text) tokens)))
+       (lambda (text tokens)
+         (-map (lambda (token)
+                 (let ((type (plist-get token :type)))
+                   (pcase type
+                     ((or `atom `text `comment `whitespace)
+                      (let ((start-pos (plist-get token :start-pos))
+                          (end-pos  (plist-get token :end-pos))
+                          (new-token (-copy token)))
+                        (when (= end-pos -1)
+                          (setf end-pos (length text))
+                          (plist-put new-token :end-pos end-pos))
+                        (plist-put new-token :text
+                                   (substring-no-properties
+                                    text
+                                    start-pos
+                                    end-pos))))
+                     ((or `expression `quote)
+                      (let* ((sub-tokens (plist-get token :tokens)))
+                        (plist-put (-copy token) :tokens
+                                   (funcall recurser text sub-tokens)))))))
+               tokens))))
+    (funcall recurser text tokens )))
 
 (defun elk--attach-level (tokens)
   "Attach a level value for the TOKENS."

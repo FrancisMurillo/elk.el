@@ -91,7 +91,8 @@
     (should (eq (plist-get current-token :type) 'whitespace))
 
     (setf current-token (funcall check-token (funcall parsing)))
-    (should (eq (plist-get current-token :type) 'quote))))
+    (should (eq (plist-get current-token :type) 'quote))
+    (should (not (null (plist-get current-token :tokens))))))
 
 (ert-deftest elk-test/identity ()
   (let* ((package-file (symbol-file 'elk))
