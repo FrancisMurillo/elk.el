@@ -26,17 +26,18 @@
 (require 'f)
 (require 'cl)
 (require 'dash)
-(require 'seq)
 
 (require 'elk (f-expand "elk" (f-parent (f-parent (f-this-file)))))
 
 
 ;; Stream
 (defun equal-pair (expected-pair actual-pair)
+  "Check if EXPECTED-PAIR is equql to ACTUAL-PAIR."
   (and (string-equal (car expected-pair) (car actual-pair))
        (= (cdr expected-pair) (cdr actual-pair))))
 
 (defun char-at (n text)
+  "Get character at N of TEXT as a pair."
   (cons (substring-no-properties text n (1+ n)) n))
 
 

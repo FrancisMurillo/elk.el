@@ -4,8 +4,6 @@
 (package "elk" "0.1.0" "Emacs Lisp source code parser for code analysis")
 (package-file "elk.el")
 
-(files "*.el")
-
 (development
  (depends-on "dash")
  (depends-on "dash-functional")
