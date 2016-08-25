@@ -47,6 +47,7 @@
 
 
 (require 's)
+(require 'subr-x)
 
 
 ;;* consume-whitespace
@@ -292,6 +293,66 @@
             (should-not (null token))
             (should (elk--stream-stop-p source-stream))))
         (list "a" "?b" "?\c")))
+
+
+;;* consume-expression
+(ert-deftest elk--consume-expression-test/base ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-expression source-stream)))
+            (should (eq 'expression
+                        (plist-get token :type)))
+            (should-not (null (plist-get token :tokens)))
+            (should (= 0
+                       (plist-get token :start-pos)))
+            (should (= -1
+                       (plist-get token :end-pos)))
+
+            (should-not (elk--stream-next-p source-stream))))
+        (list "(1)" "(a\ b axel)" "(a $ b)" "(a ?a ?\) d)")))
+
+(ert-deftest elk--consume-expression-test/complete ()
+  (let* ((source-code "(1 a ;meow\n 'b #'c `d ,e (\"meopw\") ?\)  )")
+         (source-stream (elk--started-stream source-code))
+         (token (elk--consume-expression source-stream)))
+    (should (eq 'expression
+                (plist-get token :type)))
+    (should-not (null (plist-get token :tokens)))))
+
+(ert-deftest elk--consume-expression-test/partial ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-expression source-stream)))
+            (should (eq 'expression
+                        (plist-get token :type)))
+            (should-not (null (plist-get token :tokens)))
+            (should (= 0
+                       (plist-get token :start-pos)))
+            (should (= (s-index-of "|" source-code)
+                       (plist-get token :end-pos)))
+
+            (should (elk--stream-next-p source-stream))))
+        (list "('a)|'b " "('a ?\))|?\)")))
+
+(ert-deftest elk--consume-expression-test/nil ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-expression source-stream)))
+            (should (null token))
+            (should (elk--stream-next-p source-stream))))
+        (list "axel" "?b" "?( ?)")))
+
+(ert-deftest elk--consume-expression-test/consuming ()
+  (mapc (lambda (code)
+          (let* ((source-code code)
+                 (source-stream (elk--started-stream source-code))
+                 (token (elk--consume-expression source-stream)))
+            (should-not (null token))
+            (should (elk--stream-stop-p source-stream))))
+        (list "()" "(   )")))
 
 
 (provide 'elk-consume-test)
