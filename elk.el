@@ -349,7 +349,7 @@
                                    :tokens (funcall recurser (1+ level) sub-tokens))))
                      (_ leveled-token))))
                tokens))))
-    (funcall recurser 0 tokens)))
+    (funcall recurser 1 tokens)))
 
 (defun elk--attach-token-id (tokens)
   "Attach an id for each token, useful when the TOKENS are flattned."
