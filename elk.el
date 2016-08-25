@@ -308,13 +308,24 @@
 
 
 ;;* Api
-(defun elk--tokenize (text)
+(defun elk--parsing (text)
+  "Parse source TEXT into a stream/generator yielding tokens.  Lazy loading in other ways."
+  (lexical-let ((stream (elk--text-stream text)))
+    (elk--use-stream stream nil) ; Start stream
+    (lambda ()
+      (if (elk--stream-next-p stream)
+          (elk--dispatch-stream-consumers stream)
+        'stop))))
+
+(defun elk--parse (text)
   "Tokenize an elisp source TEXT."
   (lexical-let ((tokens (list))
-                (stream (elk--text-stream text)))
-    (elk--use-stream stream nil)
-    (while (elk--stream-next-p stream)
-      (push (elk--dispatch-stream-consumers stream) tokens))
+                (parsing (elk--parsing text))
+                (token nil))
+    (while (not (eq token 'stop))
+      (setf token (funcall parsing))
+      (when (not (eq token 'stop))
+        (push token tokens)))
     (funcall (-compose
               (-partial #'elk--attach-source text)
               #'elk--attach-token-id
@@ -324,7 +335,7 @@
              tokens)))
 
 (defun elk--codify (tokens)
-  "Convert TOKENS into source code"
+  "Convert TOKENS into source code."
   (letrec ((texify (lambda (tokens)
                      (lexical-let ((recurser texify))
                        (mapcar (lambda (token)
@@ -348,16 +359,19 @@
              tokens)))
 
 (defvar elk-current-tokens (list)
-  "Current tokens parsed")
+  "Current tokens parsed.")
 
 
-(defun elk-tokenize (&optional text)
-  "Tokenize the text and save in current tokens"
+;;* Interface
+(defun elk-parse (&optional text)
+  "Tokenize the TEXT and save in elk-current-tokens.  If there is no argument specified it takes the region or the buffer."
   (interactive)
-  (let ((source-text (cond
-                      ((not (null text)) text)
-                      ((region-active-p) (buffer-substring-no-properties (region-beginning) (region-end)))
-                      (t  (buffer-substring-no-properties (point-min) (point-max))))))
+  (letrec ((source-text (cond
+                         ((not (null text)) text)
+                         ((region-active-p)
+                          (buffer-substring-no-properties (region-beginning) (region-end)))
+                         (t  (buffer-substring-no-properties (point-min) (point-max)))))
+           (recurser ()))
     (setq elk-current-tokens (elk--tokenize source-text))
     elk-current-tokens))
 
