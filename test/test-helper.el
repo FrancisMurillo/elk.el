@@ -23,6 +23,7 @@
 
 ;;; Code:
 
+(require 'seq)
 (require 'f)
 (require 'cl)
 (require 'dash)
@@ -37,7 +38,7 @@
        (= (cdr expected-pair) (cdr actual-pair))))
 
 (defun char-at (n text)
-  "Get character at N of TEXT as a pair."
+  "Get character at N of TEXT as a pair.>"
   (cons (substring-no-properties text n (1+ n)) n))
 
 
