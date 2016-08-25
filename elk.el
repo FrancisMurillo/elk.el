@@ -54,10 +54,10 @@
 ;;* Package
 (defgroup elk nil
   "Parse Emacs Lisp source code"
-  :prefix "elk"
+  :prefix "elk-"
   :group 'tools
   :link (list 'url-link
-              :tag "Github" "https://github.com/FrancisMurillo/elk.el"))
+           :tag "Github" "https://github.com/FrancisMurillo/elk.el"))
 
 
 ;;* Private
@@ -307,6 +307,90 @@
     value))
 
 
+;;* Pre-parsers
+(defun elk--attach-source (text tokens)
+  "Label atoms based on their source TEXT and parsed TOKENS."
+  (lexical-let* ((source-text text)
+                 (recurser (lambda (token)
+                             (let ((type (plist-get token :type)))
+                               (pcase type
+                                 ((or `atom `text `comment `whitespace)
+                                  (let ((start-pos (plist-get token :start-pos))
+                                        (end-pos  (plist-get token :end-pos))
+                                        (new-token (-copy token)))
+                                    (when (= end-pos -1)
+                                      (setf end-pos (length source-text))
+                                      (plist-put new-token :end-pos end-pos))
+                                    (plist-put new-token :text
+                                              (substring-no-properties source-text
+                                                                       start-pos
+                                                                       end-pos))))
+                                 ((or `expression `quote)
+                                  (let* ((sub-tokens (plist-get token :tokens)))
+                                    (plist-put(-copy token) :tokens (elk--attach-source source-text sub-tokens))))
+                                 (_ token))))))
+    (-map recurser tokens)))
+
+(defun elk--attach-level (tokens)
+  "Attach a level value for the TOKENS."
+  (letrec ((recurser
+       (lambda (level tokens)
+         "Recurser of elk--attach-level."
+         (-map (lambda (token)
+                 (let ((type (plist-get token :type))
+                     (leveled-token (plist-put (-copy token) :level level)))
+                   (pcase type
+                     ((or `expression `quote)
+                      (let ((sub-tokens (plist-get leveled-token :tokens)))
+                        (plist-put (-copy leveled-token)
+                                   :tokens (elk--leveler (1+ level) sub-tokens))))
+                     (_ leveled-token))))
+               tokens))))
+    (funcall recurser 0 tokens)))
+
+(defun elk--attach-token-id (tokens)
+  "Attach an id for each token, useful when the TOKENS are flattned."
+  (letrec ((incremental-sequence
+       (lambda (&optional start)
+         (lexical-let ((seed (or start 0)))
+           (lambda ()
+             (prog1
+                 seed
+               (setf seed (1+ seed)))))))
+      (recurser
+       (lambda (parent-id generator tokens)
+         (-map (lambda (token)
+                 (let ((type (plist-get token :type))
+                     (marked-token (plist-put (-copy token) :id (funcall generator))))
+                   (setf marked-token (plist-put marked-token :parent-id parent-id))
+                   (pcase type
+                     ((or `expression `quote)
+                      (let ((sub-tokens (plist-get marked-token :tokens)))
+                        (plist-put (-copy marked-token)
+                                   :tokens (elk--marker
+                                            (plist-get marked-token :id)
+                                            generator sub-tokens))))
+                     (_ marked-token))))
+               tokens))))
+    (funcall recurser 0 (funcall incremental-sequence 1) tokens)))
+
+(defun elk--attach-expression-index (tokens)
+  "Attach indices to TOKENS to determine what position it is in."
+  (letrec ((recurser
+       (lambda (tokens)
+         (-map-indexed (lambda (index token)
+                         (let ((type (plist-get token :type))
+                             (indexed-token (plist-put (-copy token) :index index)))
+                           (pcase type
+                             ((or `expression `quote)
+                              (let ((sub-tokens (plist-get indexed-token :tokens)))
+                                (plist-put (-copy indexed-token)
+                                           :tokens (elk--indexer sub-tokens))))
+                             (_ indexed-token))))
+                       tokens))))
+    (funcall recurser tokens)))
+
+
 ;;* Api
 (defun elk--parsing (text)
   "Parse source TEXT into a stream/generator yielding tokens.  Lazy loading in other ways."
@@ -316,6 +400,7 @@
       (if (elk--stream-next-p stream)
           (elk--dispatch-stream-consumers stream)
         'stop))))
+
 
 (defun elk--parse (text)
   "Tokenize an elisp source TEXT."
@@ -359,7 +444,7 @@
              tokens)))
 
 (defvar elk-current-tokens (list)
-  "Current tokens parsed.")
+  "Current tokens parsed.  For ease of use.")
 
 
 ;;* Interface
@@ -370,116 +455,9 @@
                          ((not (null text)) text)
                          ((region-active-p)
                           (buffer-substring-no-properties (region-beginning) (region-end)))
-                         (t  (buffer-substring-no-properties (point-min) (point-max)))))
-           (recurser ()))
-    (setq elk-current-tokens (elk--tokenize source-text))
+                         (t  (buffer-substring-no-properties (point-min) (point-max))))))
+    (setq elk-current-tokens (elk--parse source-text))
     elk-current-tokens))
-
-
-(defun elk--discard-filler (tokens)
-  "Disregard comments and whitespace with the tokens"
-  (let* ((filterer (lambda (token)
-                     (let ((type (plist-get token :type)))
-                       (pcase type
-                         ((or `whitespace `comment) nil)
-                         (_ t)))))
-         (recurser (lambda (token)
-                     (let ((type (plist-get token :type)))
-                       (pcase type
-                         ((or `expression `quote)
-                          (let* ((sub-tokens (plist-get token :tokens)))
-                            (plist-put (-copy token) :tokens (elk--discard-filler sub-tokens))))
-                         (_ token)))))
-         (pipeline (-compose
-                    (-partial #'-map recurser)
-                    (-partial #'-filter filterer))))
-    (funcall pipeline tokens)))
-
-
-(defun elk--attach-source (text tokens)
-  "Label atoms based on their source text"
-  (lexical-let* ((source-text text)
-                 (recurser (lambda (token)
-                             (let ((type (plist-get token :type)))
-                               (pcase type
-                                 ((or `atom `text `comment `whitespace)
-                                  (let ((start-pos (plist-get token :start-pos))
-                                        (end-pos  (plist-get token :end-pos))
-                                        (new-token (-copy token)))
-                                    (when (= end-pos -1)
-                                      (setf end-pos (length source-text))
-                                      (plist-put new-token :end-pos end-pos))
-                                    (plist-put new-token :text
-                                              (substring-no-properties source-text
-                                                                       start-pos
-                                                                       end-pos))))
-                                 ((or `expression `quote)
-                                  (let* ((sub-tokens (plist-get token :tokens)))
-                                    (plist-put(-copy token) :tokens (elk--attach-source source-text sub-tokens))))
-                                 (_ token))))))
-    (-map recurser tokens)))
-
-(defun elk--leveler (level tokens)
-  "Recurser of elk--attach-level"
-  (-map (lambda (token)
-          (let ((type (plist-get token :type))
-                (leveled-token (plist-put (-copy token) :level level)))
-            (pcase type
-              ((or `expression `quote)
-               (let ((sub-tokens (plist-get leveled-token :tokens)))
-                 (plist-put (-copy leveled-token)
-                            :tokens (elk--leveler (1+ level) sub-tokens))))
-              (_ leveled-token))))
-        tokens))
-
-(defun elk--attach-level (tokens)
-  "Attach a level value for the"
-  (elk--leveler 0 tokens))
-
-(defun elk--incremental-sequence (&optional start)
-  "An quick implementation of an increasing sequence"
-  (lexical-let ((seed (or start 0)))
-    (lambda ()
-      (prog1
-          seed
-        (setf seed (1+ seed))))))
-
-(defun elk--marker (parent-id generator tokens)
-  "Recurser of elk--attach-token-id"
-  (-map (lambda (token)
-          (let ((type (plist-get token :type))
-                (marked-token (plist-put (-copy token) :id (funcall generator))))
-            (setf marked-token (plist-put marked-token :parent-id parent-id))
-            (pcase type
-              ((or `expression `quote)
-               (let ((sub-tokens (plist-get marked-token :tokens)))
-                 (plist-put (-copy marked-token)
-                            :tokens (elk--marker
-                                     (plist-get marked-token :id)
-                                     generator sub-tokens))))
-              (_ marked-token))))
-        tokens))
-
-(defun elk--attach-token-id (tokens)
-  "Attach an id for each token, useful when the tokens are flattned"
-  (elk--marker 0 (elk--incremental-sequence 1) tokens))
-
-(defun elk--indexer (tokens)
-  "Recurser of elk--attach-expression-index"
-  (-map-indexed (lambda (index token)
-                  (let ((type (plist-get token :type))
-                        (indexed-token (plist-put (-copy token) :index index)))
-                    (pcase type
-                      ((or `expression `quote)
-                       (let ((sub-tokens (plist-get indexed-token :tokens)))
-                         (plist-put (-copy indexed-token)
-                                    :tokens (elk--indexer sub-tokens))))
-                      (_ indexed-token))))
-                tokens))
-
-(defun elk--attach-expression-index (tokens)
-  "Attach indices to expression to determine what position it is in"
-  (elk--indexer tokens))
 
 
 (provide 'elk)
