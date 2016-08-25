@@ -26,6 +26,7 @@
 (require 'f)
 (require 'cl)
 (require 'dash)
+(require 'seq)
 
 (require 'elk (f-expand "elk" (f-parent (f-parent (f-this-file)))))
 
