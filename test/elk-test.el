@@ -51,18 +51,15 @@
     ; A comment
       Four
         Whitespace
-  \"Worker bees\"   #'func-quote"))
+  \"Worker bees\"   #'func-quote (1 2 (3 ;meow
+))"))
       (parsing (elk--parsing source-code))
       (check-token
        (lambda (value)
          (should (not (and (eq value 'stop) (null value))))
-         ;; Attach text for checking
-         (plist-put value :text
-                    (substring-no-properties
-                     source-code
-                     (plist-get value :start-pos)
-                     (plist-get value :end-pos)))))
-      (current-token nil))
+         (car (elk--attach-source source-code (list value)))))
+      (current-token nil)
+      (tokens nil))
     (setf current-token (funcall check-token (funcall parsing)))
     (should (eq (plist-get current-token :type) 'comment))
 
@@ -90,9 +87,76 @@
     (setf current-token (funcall check-token (funcall parsing)))
     (should (eq (plist-get current-token :type) 'whitespace))
 
+
     (setf current-token (funcall check-token (funcall parsing)))
     (should (eq (plist-get current-token :type) 'quote))
-    (should (not (null (plist-get current-token :tokens))))))
+    (should (not (null (plist-get current-token :tokens))))
+    (should (string-equal (plist-get current-token :quote-text) "#'"))
+
+    (setf current-token (car (plist-get current-token :tokens)))
+    (should (eq (plist-get current-token :type) 'atom))
+    (should (string-equal (plist-get current-token :text) "func-quote"))
+
+
+    (setf current-token (funcall check-token (funcall parsing)))
+    (should (eq (plist-get current-token :type) 'whitespace))
+
+    (setf current-token (funcall check-token (funcall parsing)))
+    (should (eq (plist-get current-token :type) 'expression))
+    (should (not (null (plist-get current-token :tokens))))
+
+
+    (setf tokens (plist-get current-token :tokens))
+    (should (= (length tokens) 5))
+
+    (setf current-token (car tokens))
+    (setf tokens (cdr tokens))
+    (should (eq (plist-get current-token :type) 'atom))
+    (should (string-equal (plist-get current-token :text) "1"))
+
+    (setf current-token (car tokens))
+    (setf tokens (cdr tokens))
+    (should (eq (plist-get current-token :type) 'whitespace))
+
+    (setf current-token (car tokens))
+    (setf tokens (cdr tokens))
+    (should (eq (plist-get current-token :type) 'atom))
+    (should (string-equal (plist-get current-token :text) "2"))
+
+    (setf current-token (car tokens))
+    (setf tokens (cdr tokens))
+    (should (eq (plist-get current-token :type) 'whitespace))
+
+    (setf current-token (car tokens))
+    (should (eq (plist-get current-token :type) 'expression))
+    (should (not (null (plist-get current-token :tokens))))
+
+    (setf tokens (cdr tokens))
+    (should (null tokens))
+
+
+    (setf tokens (plist-get current-token :tokens))
+    (should (= (length tokens) 3))
+
+    (setf current-token (car tokens))
+    (setf tokens (cdr tokens))
+    (should (eq (plist-get current-token :type) 'atom))
+    (should (string-equal (plist-get current-token :text) "3"))
+
+    (setf current-token (car tokens))
+    (setf tokens (cdr tokens))
+    (should (eq (plist-get current-token :type) 'whitespace))
+
+    (setf current-token (car tokens))
+    (setf tokens (cdr tokens))
+    (should (eq (plist-get current-token :type) 'comment))
+    (should (string-equal (plist-get current-token :text) ";meow\n"))
+
+    (setf tokens (cdr tokens))
+    (should (null tokens))
+
+
+    (should (eq (funcall parsing) 'stop))))
 
 (ert-deftest elk-test/identity ()
   (let* ((package-file (symbol-file 'elk))

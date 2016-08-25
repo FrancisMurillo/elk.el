@@ -252,7 +252,7 @@
             (next-char (elk--use-stream stream nil)))
         (setf quote-text start-letter)
         (when (elk--quote-p (car next-char))
-          (setf quote-text start-letter)
+          (setf quote-text (concat start-letter (car next-char)))
           (setf next-char (elk--use-stream stream nil)))
         (let* ((sub-tokens (list (elk--dispatch-stream-consumers stream)))
                (base-token (elk--create-token 'quote
