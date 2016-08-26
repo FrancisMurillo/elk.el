@@ -5,7 +5,6 @@
 (package-file "elk.el")
 
 (development
- (depends-on "seq")
  (depends-on "dash")
  (depends-on "dash-functional")
  (depends-on "s")

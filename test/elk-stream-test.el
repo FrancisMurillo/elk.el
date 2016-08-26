@@ -45,10 +45,6 @@
 ;;
 ;;; Code:
 
-
-(require 's)
-
-
 (ert-deftest elk--text-stream-test/usage ()
   (let* ((text "abcde")
          (stream (elk--text-stream text)))

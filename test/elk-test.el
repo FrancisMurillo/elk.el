@@ -47,7 +47,7 @@
 
 (ert-deftest elk-test/parsing ()
   (let* ((source-code
-       (string-trim-left "
+       (s-trim-left "
     ; A comment
       Four
         Whitespace

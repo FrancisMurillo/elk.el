@@ -294,7 +294,7 @@
           (push (elk--dispatch-stream-consumers stream) expression-tokens)
           (setf current-char (elk--use-stream stream 'current)))
         (setf current-char (elk--use-stream stream nil))
-        (elk--create-token 'expression (seq-reverse expression-tokens) start-pos (cdr current-char))))))
+        (elk--create-token 'expression (reverse expression-tokens) start-pos (cdr current-char))))))
 
 
 (defun elk--dispatch-stream-consumers (stream)
@@ -393,6 +393,29 @@
                        tokens))))
     (funcall recurser tokens)))
 
+(defun elk--attach-atom-type (tokens)
+  "Attach atom data type to TOKENS if it has one."
+  (letrec ((typer
+       (lambda (text)
+         (cond
+          ((string-equal text "0") 'number)
+          ((not (zerop (string-to-number text))) 'number)
+          (t 'symbol))))
+      (recurser
+       (lambda (tokens)
+         (-map (lambda (token)
+                 (let ((type (plist-get token :type))
+                     (new-token (-copy token)))
+                   (when (eq type 'atom)
+                     (plist-put new-token :data-type
+                                (funcall typer (plist-get token :text))))
+                   (let ((sub-tokens (plist-get token :tokens)))
+                     (plist-put new-token
+                                :tokens (funcall recurser sub-tokens)))
+                   new-token))
+               tokens))))
+    (funcall recurser tokens)))
+
 
 ;;* Api
 (defun elk--parsing (text)
@@ -415,11 +438,12 @@
       (when (not (eq token 'stop))
         (push token tokens)))
     (funcall (-compose
-              (-partial #'elk--attach-source text)
-              #'elk--attach-token-id
-              #'elk--attach-level
-              #'elk--attach-expression-index
-              #'seq-reverse)
+        #'elk--attach-atom-type ; needs source text first
+        (-partial #'elk--attach-source text)
+        #'elk--attach-token-id
+        #'elk--attach-level
+        #'elk--attach-expression-index
+        #'reverse)
              tokens)))
 
 (defun elk--codify (tokens)
@@ -442,10 +466,10 @@
                        text-tokens))
                    tokens)))))
     (funcall (-compose
-              (-rpartial #'string-join "")
-              #'-flatten
-              texify)
-             tokens)))
+        (-partial #'s-join "")
+        #'-flatten
+        texify)
+       tokens)))
 
 (defvar elk-current-tokens (list)
   "Current tokens parsed.  For ease of use.")
@@ -456,10 +480,10 @@
   "Tokenize the TEXT and save in elk-current-tokens.  If there is no argument specified it takes the region or the buffer."
   (interactive)
   (letrec ((source-text (cond
-                         ((not (null text)) text)
-                         ((region-active-p)
-                          (buffer-substring-no-properties (region-beginning) (region-end)))
-                         (t  (buffer-substring-no-properties (point-min) (point-max))))))
+                    ((not (null text)) text)
+                    ((region-active-p)
+                     (buffer-substring-no-properties (region-beginning) (region-end)))
+                    (t  (buffer-substring-no-properties (point-min) (point-max))))))
     (setq elk-current-tokens (elk--parse source-text))
     elk-current-tokens))
 

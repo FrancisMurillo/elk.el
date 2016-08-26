@@ -45,11 +45,6 @@
 ;;
 ;;; Code:
 
-
-(require 's)
-(require 'subr-x)
-
-
 ;;* consume-whitespace
 (ert-deftest elk--consume-whitespace-test/base ()
   (let* ((source-code " \n\t  ")

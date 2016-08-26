@@ -23,7 +23,6 @@
 
 ;;; Code:
 
-(require 'seq)
 (require 'f)
 (require 'cl)
 (require 'dash)
