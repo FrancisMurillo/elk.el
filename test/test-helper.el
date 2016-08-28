@@ -23,11 +23,10 @@
 
 ;;; Code:
 
-(require 'f)
-(require 'cl)
-(require 'dash)
+(eval-when-compile (require 'cl))
 
-(require 'elk (f-expand "elk" (f-parent (f-parent (f-this-file)))))
+
+(require 'elk (expand-file-name "elk" "./"))
 
 
 ;; Stream
@@ -37,7 +36,7 @@
        (= (cdr expected-pair) (cdr actual-pair))))
 
 (defun char-at (n text)
-  "Get character at N of TEXT as a pair.>"
+  "Get character at N of TEXT as a pair."
   (cons (substring-no-properties text n (1+ n)) n))
 
 

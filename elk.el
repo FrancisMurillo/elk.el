@@ -48,7 +48,6 @@
 (require 'cl-lib)
 
 (require 'dash)
-(require 'dash-functional)
 (require 's)
 
 ;;* Package
@@ -110,7 +109,7 @@
                                                        incremented-index
                                                        (1+ incremented-index))
                               incremented-index)
-                      (setf index (1+  incremented-index)))
+                      (setf index (1+ incremented-index)))
                   'stop))
           current-value))))))
 
