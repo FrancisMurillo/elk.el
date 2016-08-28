@@ -26,6 +26,9 @@
 (eval-when-compile (require 'cl))
 
 
+(require 'dash)
+(require 'dash-functional)
+
 (require 'elk (expand-file-name "elk" "./"))
 
 
