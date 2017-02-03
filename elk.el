@@ -100,6 +100,15 @@ Like `-compose' from `dash'."
            :tag "Github" "https://github.com/FrancisMurillo/elk.el"))
 
 
+
+;; Options
+(defcustom elk-tab-width 4
+  "Tab width as spaces."
+  :type 'number
+  :group 'elk)
+
+
+
 ;;* Private
 (defvar elk--stream-consumers
   (list
@@ -121,6 +130,8 @@ Like `-compose' from `dash'."
   "Elisp parsing handlers, order is important.")
 
 
+
+
 ;;* Stream
 (defun elk--text-stream (text)
   "Create a TEXT stream used to tokenize Emacs code."
@@ -135,35 +146,38 @@ Like `-compose' from `dash'."
                            0
                          (1- increment)))
           (incremented-index (+ index incrementer)))
-        (pcase command
-          ('peek
-           (if (< incremented-index text-length)
-               (cons (substring-no-properties current-text
-                                           incremented-index
-                                           (1+ incremented-index))
-                  incremented-index)
-             'stop))
-          ('current current-value)
-          ('line line)
-          ('column column)
-          (_
-           (setf current-value
-              (if (< incremented-index text-length)
-                  (lexical-let ((this-text
-                       (substring-no-properties current-text
-                                                incremented-index
-                                                (1+ incremented-index))))
-                    (prog1
-                        (cons this-text incremented-index)
-                      (setf index (1+ incremented-index))
-                      (pcase this-text
-                        ((pred (string-equal "\n"))
-                         (setq line (1+ line)
-                            column 0))
-                        (_
-                         (setq column (1+ column))))))
-                'stop))
-           current-value))))))
+        (cond
+         ((eq command 'peek)
+          (if (< incremented-index text-length)
+              (cons (substring-no-properties current-text
+                                          incremented-index
+                                          (1+ incremented-index))
+                 incremented-index)
+            'stop))
+         ((eq command 'current) current-value)
+         ((eq command 'line) line)
+         ((eq command 'column) column)
+         (t
+          (setf current-value
+             (if (< incremented-index text-length)
+                 (lexical-let ((this-text
+                      (substring-no-properties current-text
+                                               incremented-index
+                                               (1+ incremented-index))))
+                   (prog1
+                       (cons this-text incremented-index)
+                     (setf index (1+ incremented-index))
+                     (cond
+                      ((string-equal "\n" this-text)
+                       (setq line (1+ line)
+                          column 0))
+                      ((string-equal "\t" this-text)
+                       (setq column (+ column 4)) ;; TODO: How does one argue for tabs?
+                       )
+                      (t
+                       (setq column (1+ column))))))
+               'stop))
+          current-value))))))
 
 (defun elk--started-stream (text)
   "Start a stream so that it has a current TEXT already.  This is for testing."
